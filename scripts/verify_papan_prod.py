@@ -3,14 +3,14 @@
 Verify produksi — fitur Papan Pengakuan (isi confess tayang di halaman depan).
 Pakai: python3 scripts/verify_papan_prod.py [BASE_URL]
 
-Ekspektasi: kolom showMessage/showAs SUDAH ada di DB produksi + deploy terbaru.
+Ekspektasi: kolom showMessage/showAs ada di DB produksi + deploy terbaru.
 
-PELAJARAN 2026-11-02: caching Hyperdrive masih aktif di produksi (TTL ±60 dtk,
-terbukti lewat probe read-after-write: entry POST langsung GET / TIDAK muncul,
-baru muncul setelah jendela cache basi). Karena itu SEMUA cek kehadiran di
-beranda pakai POLLING (maks 180 dtk), meniru pola verifikasi dinding
-(344533f). Kalau suatu saat caching dimatikan di dashboard Cloudflare,
-polling ini otomatis lolos di iterasi pertama — skrip kebal dua dunia.
+PELAJARAN 2026-11-02 (versi 2): feed papan kini CLIENT-SIDE via GET /api/papan
+(perbaikan Error 1102 — SSR beranda harus nol query DB). Karena itu semua cek
+kehadiran menargetkan JSON /api/papan, bukan HTML beranda. Cache Hyperdrive
+query ±60 dtk masih aktif di produksi → polling tetap dipakai (maks 180 dtk),
+meniru pola verifikasi dinding (344533f). Kalau caching dimatikan di dashboard,
+polling lolos di iterasi pertama — skrip kebal dua dunia.
 """
 import json
 import sys
@@ -56,29 +56,31 @@ def check(name, ok, detail=""):
     print(("PASS" if ok else "FAIL"), "-", name, ("| " + detail if detail else ""))
 
 
-def poll_landing(desc, cond):
-    """Poll GET / sampai cond(html) True. Return html terakhir + status kecapaian."""
+def poll_papan(desc, cond):
+    """Poll GET /api/papan sampai cond(body) True. Return body terakhir + status."""
     t0 = time.time()
     n = 0
     while True:
         n += 1
-        s, html = req("/")
-        if s == 200 and cond(html):
+        s, body = req("/api/papan")
+        if s == 200 and cond(body):
             print(f"    [{desc}] lolos di iterasi {n} ({time.time() - t0:.0f} dtk)")
-            return html, True
+            return body, True
         if time.time() - t0 > POLL_TIMEOUT:
-            return html, False
+            return body, False
         time.sleep(POLL_EVERY)
 
 
 def main():
     t_start = time.time()
 
-    # 1. Landing sehat sebelum apapun
+    # 1. Landing & API papan sehat sebelum apa pun
     s, html = req("/")
     check("GET / 200", s == 200, f"status={s}")
     check("landing ada section Papan", 'id="papan"' in html)
     check("landing ada CTA papan", "Tulis pengakuanmu" in html)
+    s, body = req("/api/papan")
+    check("GET /api/papan 200", s == 200, f"status={s}")
 
     # 2. Buat confess dengan mode tayang + nama depan
     s, body = req(
@@ -101,16 +103,16 @@ def main():
         check("punya slug+senderKey", False, body[:200])
         return summary()
 
-    # 3. POLLING beranda sampai entry tayang (cache Hyperdrive 60dtk)
-    html, ok = poll_landing("tayang-nama", lambda h: UNIQ in h and SNIPPET in h)
-    check("isi surat tampil di papan", SNIPPET in html)
-    check("nama depan pengirim tampil", UNIQ in html)
-    check("nama depan penerima tampil", ">Nadia<" in html)
-    check("no HP termasking", "081234567890" not in html)
-    check("email termasking", "test@mail.com" not in html)
-    check("URL termasking", "www.contoh.com" not in html)
-    check("slug TIDAK bocor di papan", slug not in html)
-    check("papan muncul dalam batas polling", ok)
+    # 3. POLLING /api/papan sampai entry tayang (cache Hyperdrive 60dtk)
+    body, ok = poll_papan("tayang-nama", lambda b: UNIQ in b and SNIPPET in b)
+    check("isi surat tampil di feed papan", SNIPPET in body)
+    check("nama depan pengirim tampil", UNIQ in body)
+    check("nama depan penerima tampil", '"to":"Nadia"' in body)
+    check("no HP termasking", "081234567890" not in body)
+    check("email termasking", "test@mail.com" not in body)
+    check("URL termasking", "www.contoh.com" not in body)
+    check("slug TIDAK bocor di papan", slug not in body)
+    check("feed muncul dalam batas polling", ok)
 
     # 4. Status API laporkan mode dengan benar (read-after-write, nonce-guard)
     s, body = req(f"/api/status/{skey}")
@@ -125,16 +127,16 @@ def main():
         s == 200 and json.loads(body).get("wallMode") == "anonim",
         body[:80],
     )
-    html, ok = poll_landing("mode-anonim", lambda h: UNIQ not in h and SNIPPET in h)
-    check("mode anonim: isi tetap tampil", SNIPPET in html)
-    check("mode anonim: nama depan hilang", UNIQ not in html)
+    body, ok = poll_papan("mode-anonim", lambda b: UNIQ not in b and SNIPPET in b)
+    check("mode anonim: isi tetap tampil", SNIPPET in body)
+    check("mode anonim: nama depan hilang", UNIQ not in body)
     check("papan anonim dalam batas polling", ok)
 
-    # 6. Ganti mode: off → privat (isi hilang dari beranda) — polling
+    # 6. Ganti mode: off → privat (isi hilang dari feed) — polling
     s, body = req(f"/api/status/{skey}", "PATCH", {"wallMode": "off"})
     check("PATCH wallMode=off", s == 200, body[:80])
-    html, ok = poll_landing("mode-privat", lambda h: SNIPPET not in h)
-    check("mode privat: isi hilang dari papan", SNIPPET not in html)
+    body, ok = poll_papan("mode-privat", lambda b: SNIPPET not in b)
+    check("mode privat: isi hilang dari papan", SNIPPET not in body)
     check("papan privat dalam batas polling", ok)
 
     # 7. Jalur lawas isPublic tetap hidup (teaser dinding)

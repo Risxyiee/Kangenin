@@ -1,6 +1,7 @@
 import { ImageResponse } from "next/og";
 import { db, withDbRetry } from "@/lib/db";
 import { GIFT_META, type GiftType } from "@/lib/gift-data";
+import { singleFlight } from "@/lib/singleflight";
 
 export const runtime = "nodejs";
 
@@ -16,6 +17,11 @@ export const runtime = "nodejs";
  * saat link viral — mulai sekarang render cuma SEKALI per URL per PoP, sisanya
  * dilayani caches.default. Fallback aman: kalau Cache API tak tersedia
  * (next dev lokal), tinggal render biasa.
+ *
+ * Ditambah single-flight per URL (src/lib/singleflight.ts): burst test
+ * 2026-11-02 menunjukkan 15 render satori paralel di isolate yang sama =
+ * 12×503 (memori rewel). Sekarang render URL sama bersamaan cukup SEKALI,
+ * sisanya menumpang bytes yang sama.
  */
 const ogCache = (): Cache | null => {
   try {
@@ -25,9 +31,13 @@ const ogCache = (): Cache | null => {
   }
 };
 
+// single-flight per URL — render paralel URL sama cukup satu
+const ogInflight = new Map<string, { at: number; p: Promise<ArrayBuffer> }>();
+
 export async function GET(req: Request) {
-  // 1) cache hit → nol CPU
   const cache = ogCache();
+
+  // 1) fast path — cache hit → nol CPU, tanpa antre
   if (cache) {
     try {
       const hit = await cache.match(req.url);
@@ -37,7 +47,39 @@ export async function GET(req: Request) {
     }
   }
 
-  const { searchParams } = new URL(req.url);
+  // 2) single-flight per URL: 15 crawler menyambar URL sama bersamaan →
+  //    render cukup SEKALI per isolate; sisanya menumpang bytes yang sama
+  const bytes = await singleFlight(
+    ogInflight,
+    req.url,
+    async (): Promise<ArrayBuffer> => {
+      // cek ulang dalam antrean — request lain mungkin baru saja mengisi
+      // cache saat kita mengantre di belakangnya
+      if (cache) {
+        try {
+          const hit = await cache.match(req.url);
+          if (hit) return await hit.arrayBuffer();
+        } catch {
+          /* abaikan → render */
+        }
+      }
+      return renderOg(req.url);
+    }
+  );
+
+  // 3) tiap penerima dapat Response sendiri dari bytes yang sama
+  return new Response(bytes, {
+    status: 200,
+    headers: {
+      "Content-Type": "image/png",
+      "Cache-Control": "public, max-age=86400",
+    },
+  });
+}
+
+/** Render kartu OG (query judul + satori) lalu simpan ke Cache-API PoP. */
+async function renderOg(url: string): Promise<ArrayBuffer> {
+  const { searchParams } = new URL(url);
   const k = searchParams.get("k");
   const flex = searchParams.get("flex"); // kartu flex pengirim (share story)
   const yes = searchParams.get("yes"); // kartu kabar bahagia penerima
@@ -223,22 +265,26 @@ export async function GET(req: Request) {
     { width: 1200, height: 630 }
   );
 
-  // 2) isi longgar buat crawler (isi kartu tak berubah: toName & type statis)
-  const out = new Response(rendered.body, {
-    status: rendered.status,
-    headers: {
-      ...Object.fromEntries(rendered.headers),
-      "Cache-Control": "public, max-age=86400",
-    },
-  });
+  const bytes = await rendered.arrayBuffer();
 
-  // 3) simpan ke Cache-API PoP — request berikutnya nol CPU
+  // simpan ke Cache-API PoP — request berikutnya nol CPU (isi kartu tak
+  // berubah: toName & type statis)
+  const cache = ogCache();
   if (cache) {
     try {
-      await cache.put(req.url, out.clone());
+      await cache.put(
+        url,
+        new Response(bytes, {
+          status: 200,
+          headers: {
+            "Content-Type": "image/png",
+            "Cache-Control": "public, max-age=86400",
+          },
+        })
+      );
     } catch {
-      /* gagal simpan → tetap balas request ini */
+      /* gagal simpan → request ini tetap terlayani */
     }
   }
-  return out;
+  return bytes;
 }
