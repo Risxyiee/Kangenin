@@ -72,8 +72,10 @@ function ensureFeedbackTable(): Promise<void> {
   if (!ensurePromise) {
     ensurePromise = (async () => {
       const pool = getPgPool();
-      await pool.query(CREATE_TABLE_SQL);
-      await pool.query(CREATE_INDEX_SQL);
+      // DDL dibungkus withDbRetry — dial dingin isolate segar pascadeploy
+      // bisa >4,5 dtk; tanpa ulang = 500. DDL idempoten (IF NOT EXISTS).
+      await withDbRetry(() => pool.query(CREATE_TABLE_SQL));
+      await withDbRetry(() => pool.query(CREATE_INDEX_SQL));
     })().catch((err) => {
       // gagal → reset supaya request berikutnya mencoba lagi
       ensurePromise = null;

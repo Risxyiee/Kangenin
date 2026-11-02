@@ -48,9 +48,13 @@ function ensureFeedbackAdmin(): Promise<void> {
   if (!ensurePromise) {
     ensurePromise = (async () => {
       const pool = getPgPool();
-      await pool.query(CREATE_TABLE_SQL);
-      await pool.query(ALTER_STATUS_SQL);
-      await pool.query(CREATE_INDEX_SQL);
+      // DDL dibungkus withDbRetry: di isolate segar pascadeploy, dial dingin
+      // Hyperdrive→origin bisa >4,5 dtk → "Query read timeout" → tanpa ulang
+      // = 500. DDL idempoten (IF NOT EXISTS) jadi aman diulang di koneksi
+      // baru (insiden 500 burst GET masukan pascadeploy 2026-11-02).
+      await withDbRetry(() => pool.query(CREATE_TABLE_SQL));
+      await withDbRetry(() => pool.query(ALTER_STATUS_SQL));
+      await withDbRetry(() => pool.query(CREATE_INDEX_SQL));
     })().catch((err) => {
       ensurePromise = null;
       throw err;
