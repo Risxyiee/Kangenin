@@ -72,7 +72,13 @@ r = requests.post(
     json={"message": msg, "rating": 5, "category": "lainnya"},
     timeout=30,
 )
-check("POST /api/feedback (data tes)", r.status_code == 200)
+# 429 = rate limit 5/30mnt/IP (anti-spam bekerja — skrip & probe berbagi IP
+# egress yang sama). Cetak selalu statusnya supaya tidak jadi teka-teki.
+check(
+    "POST /api/feedback (data tes)",
+    r.status_code == 200,
+    "" if r.status_code == 200 else f"status={r.status_code} body={r.text[:120]}",
+)
 
 r = requests.get(f"{BASE}/api/admin/masukan", headers=H, timeout=30)
 check("GET masukan -> 200", r.status_code == 200, r.text[:120] if r.status_code != 200 else "")
@@ -118,21 +124,45 @@ pub = next((x for x in dd.get("items", []) if x["isPublic"]), None)
 check("dinding admin terbaca", r.status_code == 200, f"items={len(dd.get('items', []))}")
 
 if pub:
-    r = requests.patch(
-        f"{BASE}/api/admin/dinding", headers=H, json={"id": pub["id"], "action": "hide"}, timeout=30
-    )
-    check("hide surat dari dinding", r.status_code == 200)
+    def patch_dinding(pid, action):
+        """PATCH dinding dengan 1x coba-ulang utk 5xx transien Hyperdrive
+        (dokumentasi src/lib/db.ts). 4xx tidak diulang — itu error nyata."""
+        last = None
+        for attempt in (1, 2):
+            last = requests.patch(
+                f"{BASE}/api/admin/dinding",
+                headers=H,
+                json={"id": pid, "action": action},
+                timeout=30,
+            )
+            if last.status_code == 200 or last.status_code < 500:
+                return last
+            time.sleep(10)
+        return last
 
-    w = requests.get(f"{BASE}/api/wall", params={"limit": 96}, timeout=30).json()
+    r = patch_dinding(pub["id"], "hide")
     check(
-        "surat hilang dari /api/wall",
-        all(x["id"] != pub["id"] for x in w.get("items", [])),
+        "hide surat dari dinding",
+        r.status_code == 200,
+        "" if r.status_code == 200 else f"status={r.status_code} body={r.text[:120]}",
     )
 
-    r = requests.patch(
-        f"{BASE}/api/admin/dinding", headers=H, json={"id": pub["id"], "action": "unhide"}, timeout=30
+    # Cache Hyperdrive bisa masih menyajikan daftar lama ±60 dtk → polling.
+    hilang = False
+    for _ in range(15):
+        w = requests.get(f"{BASE}/api/wall", params={"limit": 96}, timeout=30).json()
+        if all(x["id"] != pub["id"] for x in w.get("items", [])):
+            hilang = True
+            break
+        time.sleep(6)
+    check("surat hilang dari /api/wall (polling cache)", hilang)
+
+    r = patch_dinding(pub["id"], "unhide")
+    check(
+        "unhide surat (pulihkan)",
+        r.status_code == 200,
+        "" if r.status_code == 200 else f"status={r.status_code} body={r.text[:120]}",
     )
-    check("unhide surat (pulihkan)", r.status_code == 200)
 
     # Cache Hyperdrive ±60 dtk bisa masih pegang hasil saat surat disembunyikan
     # (prilaku terdokumentasi di src/lib/db.ts) → polling maks 90 dtk.
