@@ -17,10 +17,48 @@ import ConfessionView, { CONFESS_THEMES } from "@/components/confess/ConfessionV
 import { LS_KEYS, lsGet, lsSet } from "@/lib/local-store";
 import { FETCH_TIMEOUT_MESSAGE, fetchWithTimeout, isTimeoutError } from "@/lib/fetch-timeout";
 
-type Phase = "closed" | "opening" | "letter" | "question" | "reply" | "sent";
+/* alur demo = CERMIN PERSIS alur asli PremiumConfess (Heartstring Edition):
+   segel lilin → tahan detak (3 reward) → hati retak → surat baris demi baris
+   → pilihan jawaban → balasan tertulis → terkirim */
+type Phase = "seal" | "heartbeat" | "shatter" | "letter" | "question" | "reply" | "sent";
 const DEMO_MSG =
   "Hei... aku udah lama pengen bilang ini. Setiap kamu ketawa, aku ikut senyum. Aku suka kamu. Sudah lama.";
 const DEMO_REPLY = "aku juga… makasih udah berani bilang 🤍";
+/* surat demo dipecah baris — babak "letter" asli memunculkan pesan BARIS DEMI BARIS */
+const DEMO_LINES = [
+  "Hei... aku udah lama pengen bilang ini.",
+  "Setiap kamu ketawa, aku ikut senyum.",
+  "Aku suka kamu. Sudah lama.",
+];
+const DEMO_SENDER = "Rizky";
+const DEMO_MASKED = "Ri••y"; // topeng bocor ala leakName() di PremiumConfess
+
+/* geometri retakan & pecahan — disalin dari PremiumConfess (skala sama,
+   supaya mini-demo ini benar-benar memperlihatkan babak "shatter" aslinya) */
+const CRACKS = [
+  { d: "M66 12 L59 46 L73 72 L61 106", delay: 0 },
+  { d: "M59 46 L39 58", delay: 0.14 },
+  { d: "M73 72 L95 84", delay: 0.2 },
+];
+const SHARDS = [
+  { x: -70, y: -46, r: -120, d: 0.0 },
+  { x: 64, y: -58, r: 140, d: 0.05 },
+  { x: -46, y: 44, r: -80, d: 0.1 },
+  { x: 52, y: 40, r: 100, d: 0.14 },
+  { x: -14, y: -84, r: -160, d: 0.18 },
+  { x: 20, y: 78, r: 60, d: 0.22 },
+];
+const FIREFLIES = [
+  { x: -84, y: -120, d: 0.05 },
+  { x: -46, y: -150, d: 0.18 },
+  { x: -8, y: -132, d: 0.1 },
+  { x: 34, y: -158, d: 0.26 },
+  { x: 72, y: -128, d: 0.14 },
+  { x: 98, y: -96, d: 0.34 },
+  { x: -104, y: -84, d: 0.4 },
+  { x: 12, y: -176, d: 0.5 },
+];
+const RING_C = 2 * Math.PI * 56; // keliling cincin progres detak
 
 /* warna tema demo — kelas gradien SAMA dengan tema asli di lib/themes.ts,
    muter tiap putaran supaya kelihatan bahwa pilihan tema benar-benar ngaruh */
@@ -65,50 +103,52 @@ const UNLOCK_OPTIONS = [
   { value: "minggu", label: "Kejutan: buka seminggu lagi 📅" },
 ];
 
-/* ---------- demo looping di dalam HP — cerminan alur asli hari ini:
-   amplop → surat → jawaban → “mau kirim pesan buat dia?” → balasan terkirim ---------- */
+/* ---------- demo looping di dalam HP — cermin PERSIS alur asli (Heartstring):
+   segel lilin → tahan detak 850/650/480ms (3 reward: potongan pesan, nama
+   bocor, retak) → pecah + kunang-kunang → surat baris demi baris → jawaban
+   → balasan → terkirim. Bukan lagi animasi amplop lama. ---------- */
 function PhoneDemo() {
-  const [phase, setPhase] = useState<Phase>("closed");
-  const [chars, setChars] = useState(0);
+  const [phase, setPhase] = useState<Phase>("seal");
+  const [beat, setBeat] = useState(0); // detak keberapa yang sudah terlepas
   const [loop, setLoop] = useState(0);
   const theme = DEMO_THEMES[loop % DEMO_THEMES.length];
 
   useEffect(() => {
-    let t1: ReturnType<typeof setTimeout>;
-    let t2: ReturnType<typeof setInterval>;
-    if (phase === "closed") {
-      t1 = setTimeout(() => setPhase("opening"), 2400);
-    } else if (phase === "opening") {
-      t1 = setTimeout(() => {
-        setPhase("letter");
-        setChars(0);
-      }, 800);
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    if (phase === "seal") {
+      // di aslinya penerima yang mengetuk segelnya — demo auto-tap
+      timers.push(setTimeout(() => setPhase("heartbeat"), 2600));
+    } else if (phase === "heartbeat") {
+      // mesin detak yang SAMA dengan PremiumConfess: 850 → 650 → 480 ms
+      let acc = 0;
+      [850, 650, 480].forEach((dur, i) => {
+        acc += dur;
+        timers.push(setTimeout(() => setBeat(i + 1), acc));
+      });
+      // detak ke-3 = hati retak → babak pecah (di asli: audio.crack)
+      timers.push(setTimeout(() => setPhase("shatter"), acc + 520));
+    } else if (phase === "shatter") {
+      // kilatan putih + retakan + pecahan + kunang-kunang → surat (di asli 1.75 dtk)
+      timers.push(setTimeout(() => setPhase("letter"), 1900));
     } else if (phase === "letter") {
-      t2 = setInterval(() => {
-        setChars((c) => {
-          if (c + 1 >= DEMO_MSG.length) {
-            clearInterval(t2);
-            setTimeout(() => setPhase("question"), 900);
-            return DEMO_MSG.length;
-          }
-          return c + 1;
-        });
-      }, 30);
+      // 3 baris blur → tajam (stagger di render), lalu pilihan jawaban
+      timers.push(setTimeout(() => setPhase("question"), 3100));
     } else if (phase === "question") {
-      t1 = setTimeout(() => setPhase("reply"), 2800);
+      // di aslinya penerima memilih — demo memutar jalur jawaban "iya"
+      timers.push(setTimeout(() => setPhase("reply"), 3000));
     } else if (phase === "reply") {
-      t1 = setTimeout(() => setPhase("sent"), 2200);
-    } else if (phase === "sent") {
-      t1 = setTimeout(() => {
-        setPhase("closed");
-        setChars(0);
-        setLoop((l) => l + 1); // putaran baru → tema ganti
-      }, 3400);
+      timers.push(setTimeout(() => setPhase("sent"), 2600));
+    } else {
+      // sent → mulai lagi, tema ganti
+      timers.push(
+        setTimeout(() => {
+          setBeat(0);
+          setLoop((l) => l + 1); // putaran baru → tema ganti
+          setPhase("seal");
+        }, 3600)
+      );
     }
-    return () => {
-      clearTimeout(t1);
-      clearInterval(t2);
-    };
+    return () => timers.forEach(clearTimeout);
   }, [phase]);
 
   return (
@@ -129,44 +169,287 @@ function PhoneDemo() {
           </span>
         </div>
 
-        {phase === "closed" || phase === "opening" ? (
+        {/* ── BABAK 0 — SEGEL LILIN (persis "veil" PremiumConfess) ── */}
+        {phase === "seal" && (
           <div className="relative z-10 flex h-full flex-col items-center justify-center px-4 text-center">
             <p className="font-hand text-2xl text-white">Buat kamu,</p>
             <p className="mt-0.5 text-[11px] text-white/60">
-              seseorang meninggalkan surat
+              seseorang menyegel suratnya
             </p>
-            <div className="perspective-1200 relative mt-8 h-[120px] w-[180px] anim-float">
-              {/* amplop */}
-              <div className="absolute inset-0 rounded-lg bg-white shadow-md ring-1 ring-black/5" />
+            <div className="relative mt-8 flex h-[120px] w-[180px] items-center justify-center anim-float">
+              {/* halo glow — animasi seal-glow yang sama dipakai alur asli */}
               <div
-                className="absolute inset-0 rounded-lg bg-[#f3ece2]"
-                style={{ clipPath: "polygon(0 18%, 50% 62%, 100% 18%, 100% 100%, 0 100%)" }}
+                className="absolute h-28 w-28 rounded-full border border-white/20"
+                style={{ animation: "seal-glow 1.8s ease-in-out infinite" }}
               />
+              {/* segel lilin hati */}
               <div
-                className="absolute left-0 top-0 h-[58%] w-full rounded-t-lg bg-[#ece2d4]"
+                className="relative flex h-20 w-20 items-center justify-center rounded-full"
                 style={{
-                  transformOrigin: "top",
-                  clipPath: "polygon(0 0, 100% 0, 50% 100%)",
-                  transform: phase === "opening" ? "rotateX(172deg)" : "rotateX(0deg)",
-                  transition: "transform 0.65s ease-in-out",
-                }}
-              />
-              <div
-                className="absolute left-1/2 top-[44%] z-10 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full bg-primary shadow-md"
-                style={{
-                  animation: phase === "opening" ? undefined : "seal-glow 1.8s ease-in-out infinite",
-                  opacity: phase === "opening" ? 0 : 1,
-                  transition: "opacity 0.4s",
+                  background:
+                    "radial-gradient(circle at 35% 30%, #c14a5e, #7a1f33 72%)",
+                  boxShadow:
+                    "0 8px 20px rgba(0,0,0,0.45), inset 0 2px 6px rgba(255,255,255,0.28)",
                 }}
               >
-                <Check className="h-4 w-4 text-white" strokeWidth={3} />
+                <div className="relative h-7 w-7">
+                  <div className="heart-shape" style={{ background: "#fff3ea" }} />
+                </div>
               </div>
+              <span className="absolute bottom-0 rounded-full bg-white/10 px-2.5 py-1 text-[9px] font-semibold text-white/85 backdrop-blur">
+                segel detak jantung
+              </span>
             </div>
-            <p className="mt-9 text-[11px] text-white/50">
-              {phase === "opening" ? "membuka..." : "mengetuk otomatis..."}
+            <p className="mt-8 text-[11px] leading-relaxed text-white/50">
+              &ldquo;tersegel dengan detak jantung seseorang&rdquo;
             </p>
           </div>
-        ) : phase === "sent" ? (
+        )}
+
+        {/* ── BABAK 1 — DETAK (persis "heartbeat": 3 detak makin cepat + reward) ── */}
+        {phase === "heartbeat" && (
+          <div className="relative z-10 flex h-full flex-col items-center justify-center px-5 text-center">
+            <p className="text-sm text-white/80">
+              Dengarkan&hellip; dia masih berdetak.
+            </p>
+            <div className="relative mt-6 h-[132px] w-[132px]">
+              {/* cincin progres — terisi tiap detak, seperti ring aslinya */}
+              <svg
+                viewBox="0 0 132 132"
+                className="absolute inset-0 h-full w-full -rotate-90"
+                aria-hidden
+              >
+                <circle
+                  cx="66"
+                  cy="66"
+                  r="56"
+                  fill="none"
+                  stroke="rgba(255,255,255,0.14)"
+                  strokeWidth="3"
+                />
+                <circle
+                  cx="66"
+                  cy="66"
+                  r="56"
+                  fill="none"
+                  stroke="#e8b4bb"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  strokeDasharray={RING_C}
+                  strokeDashoffset={RING_C * (1 - beat / 3)}
+                  style={{ transition: "stroke-dashoffset 0.72s ease" }}
+                />
+              </svg>
+              {/* hati yang ditahan — berdetak makin cepat */}
+              <div className="absolute inset-0 m-auto flex h-16 w-16 items-center justify-center anim-heartbeat">
+                <div className="relative h-10 w-10">
+                  <div className="heart-shape" style={{ background: "#e8798f" }} />
+                </div>
+              </div>
+            </div>
+            {/* reward tiap detak — urutan persis alur asli:
+                potongan pesan (blur) → nama bocor → retak */}
+            <div className="mt-5 flex min-h-[64px] flex-col items-center gap-2">
+              {beat >= 1 && (
+                <motion.p
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="rounded-full bg-white/10 px-3 py-1 text-[10px] text-white/85 backdrop-blur"
+                >
+                  <span className="blur-[1.5px]">
+                    &ldquo;Hei... aku udah lama&hellip;&rdquo;
+                  </span>
+                </motion.p>
+              )}
+              {beat >= 2 && (
+                <motion.p
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="rounded-full border border-[#e8b4bb]/40 bg-[#e8b4bb]/10 px-3 py-1 text-[10px] font-semibold text-[#e8b4bb]"
+                >
+                  darinya: {DEMO_MASKED}
+                </motion.p>
+              )}
+              {beat >= 3 && (
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="text-[10px] text-white/60"
+                >
+                  detak ke-3&hellip; hatinya retak
+                </motion.p>
+              )}
+            </div>
+            <p className="mt-1 text-[10px] text-white/40">
+              (di aslinya, dia nahan detaknya pakai jarinya)
+            </p>
+          </div>
+        )}
+
+        {/* ── BABAK 2 — RETAK (persis "shatter": kilat, retakan, pecahan, kunang-kunang) ── */}
+        {phase === "shatter" && (
+          <div className="relative z-10 flex h-full flex-col items-center justify-center">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: [0, 0.32, 0] }}
+              transition={{ duration: 0.9, times: [0, 0.22, 1] }}
+              className="pointer-events-none absolute inset-0 bg-white"
+            />
+            <div className="relative h-40 w-40">
+              {/* hati memudar berserakan */}
+              <motion.div
+                animate={{ scale: 0.55, opacity: 0 }}
+                transition={{ duration: 0.7, ease: "easeIn" }}
+                className="absolute inset-0 m-auto flex h-14 w-14 items-center justify-center"
+              >
+                <div
+                  className="heart-shape h-full w-full"
+                  style={{ background: "#e8798f" }}
+                />
+              </motion.div>
+              {/* garis retak menjalar — path asli PremiumConfess */}
+              <svg
+                viewBox="0 0 132 132"
+                className="absolute inset-0 m-auto h-28 w-28 overflow-visible"
+                aria-hidden
+              >
+                {CRACKS.map((c, i) => (
+                  <motion.path
+                    key={i}
+                    d={c.d}
+                    fill="none"
+                    stroke="rgba(255,255,255,0.8)"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                    initial={{ pathLength: 0 }}
+                    animate={{ pathLength: 1 }}
+                    transition={{ duration: 0.45, delay: c.delay }}
+                  />
+                ))}
+              </svg>
+              {/* pecahan hati terpental */}
+              {SHARDS.map((s, i) => (
+                <motion.span
+                  key={i}
+                  className="absolute left-1/2 top-1/2 h-3 w-3"
+                  initial={{ x: 0, y: 0, rotate: 0, opacity: 1 }}
+                  animate={{ x: s.x, y: s.y, rotate: s.r, opacity: 0 }}
+                  transition={{ duration: 0.9, delay: s.d, ease: "easeOut" }}
+                >
+                  <span
+                    className="heart-shape block h-full w-full"
+                    style={{ background: i % 2 ? "#e8b4bb" : "#c96b7d" }}
+                  />
+                </motion.span>
+              ))}
+              {/* kunang-kunang naik */}
+              {FIREFLIES.map((f, i) => (
+                <motion.span
+                  key={i}
+                  className="absolute left-1/2 top-1/2 h-1.5 w-1.5 rounded-full"
+                  style={{ background: i % 2 ? "#d9a441" : "#fdf6f0" }}
+                  initial={{ x: f.x * 0.4, y: -12, opacity: 0 }}
+                  animate={{ x: f.x, y: f.y, opacity: [0, 0.9, 0] }}
+                  transition={{ duration: 1.4, delay: f.d, ease: "easeOut" }}
+                />
+              ))}
+            </div>
+            <p className="mt-1 text-[11px] text-white/60">
+              hatinya retak&hellip; suratnya mulai kebuka
+            </p>
+          </div>
+        )}
+
+        {/* ── BABAK 3 — SURAT (persis "letter": muncul baris demi baris, blur → tajam) ── */}
+        {(phase === "letter" || phase === "question") && (
+          <div className="relative z-10 flex h-full flex-col justify-center px-4">
+            <div className="grain relative rounded-lg bg-[#fffaf5] p-4 text-left shadow-md ring-1 ring-black/5">
+              {/* aksen gold-foil seperti lembar pengakuan aslinya */}
+              <div className="absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-[#d9a441]/70 to-transparent" />
+              <p className="font-hand text-lg leading-6 text-primary">
+                Hai Kamu,
+              </p>
+              <div className="mt-2 min-h-[92px] space-y-1.5">
+                {DEMO_LINES.map((line, i) => (
+                  <motion.p
+                    key={i}
+                    initial={{ opacity: 0, filter: "blur(6px)", y: 6 }}
+                    animate={{ opacity: 1, filter: "blur(0px)", y: 0 }}
+                    transition={{ delay: 0.3 + i * 0.55, duration: 0.5 }}
+                    className="text-[11.5px] leading-relaxed text-neutral-800"
+                  >
+                    {line}
+                  </motion.p>
+                ))}
+              </div>
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.3 + DEMO_LINES.length * 0.55 }}
+                className="mt-2 text-right font-hand text-base text-neutral-600"
+              >
+                — {DEMO_MASKED}
+              </motion.p>
+            </div>
+            {phase === "question" && (
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.25 }}
+                className="mt-4 space-y-2"
+              >
+                <p className="text-center text-[10px] font-medium text-white/80">
+                  Jadi... gimana jawabanmu?
+                </p>
+                <div className="rounded-md bg-primary py-2.5 text-center text-[11px] font-bold text-white">
+                  Iya, aku juga suka kamu
+                </div>
+                <div className="rounded-md border border-white/20 bg-white/5 py-2.5 text-center text-[11px] text-white/70">
+                  Beri aku waktu dulu
+                </div>
+              </motion.div>
+            )}
+          </div>
+        )}
+
+        {/* ── JAWABAN + BALASAN (persis loop dua arah: iya → nama kebuka → balas) ── */}
+        {phase === "reply" && (
+          <div className="relative z-10 flex h-full flex-col justify-center px-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.92 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="rounded-lg bg-[#fffaf5] p-3.5 text-left shadow-md ring-1 ring-black/5"
+            >
+              <p className="text-[11px] font-bold text-[#9d1c34]">
+                Dia jawab: IYA 💘
+              </p>
+              <p className="mt-0.5 text-[10.5px] leading-relaxed text-neutral-700">
+                Nama pengirimnya kebuka: <b>{DEMO_SENDER}</b>
+              </p>
+            </motion.div>
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3 }}
+              className="mt-3 rounded-lg border border-white/20 bg-white/5 p-3 backdrop-blur"
+            >
+              <p className="text-[11px] font-bold text-white">
+                Mau kirim pesan buat dia? 💬
+              </p>
+              <div className="mt-2 flex items-center gap-1.5" aria-label="sedang menulis">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white/70" />
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white/70 [animation-delay:0.2s]" />
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white/70 [animation-delay:0.4s]" />
+              </div>
+              <p className="mt-1.5 text-[10px] leading-relaxed text-white/60">
+                Balasannya muncul di dashboard pengirimnya — tanpa nama.
+              </p>
+            </motion.div>
+          </div>
+        )}
+
+        {/* ── TERKIRIM ── */}
+        {phase === "sent" && (
           <div className="relative z-10 flex h-full flex-col items-center justify-center px-5 text-center">
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-white/10">
               <div className="relative h-8 w-8 anim-heartbeat">
@@ -177,61 +460,12 @@ function PhoneDemo() {
               Balasanmu terkirim 💜
             </p>
             <div className="mt-3 w-full rounded-2xl rounded-tl-sm bg-white/10 px-3.5 py-2.5 text-left text-[11px] leading-relaxed text-white/90 backdrop-blur">
-              “{DEMO_REPLY}”
+              &ldquo;{DEMO_REPLY}&rdquo;
             </div>
             <p className="mt-3 text-[10px] leading-relaxed text-white/55">
               Pesannya udah nongol di dashboard pengirimnya —
               tanpa nama, tanpa jejak.
             </p>
-          </div>
-        ) : (
-          /* letter / question / reply */
-          <div className="relative z-10 flex h-full flex-col justify-center px-4">
-            <div className="rounded-lg bg-[#fffaf5] p-4 text-left shadow-md ring-1 ring-black/5">
-              <p className="font-hand text-lg leading-6 text-primary">
-                Hai kamu,
-              </p>
-              <p className="mt-2 min-h-[92px] text-[11.5px] leading-relaxed text-neutral-800">
-                {DEMO_MSG.slice(0, chars)}
-                {phase === "letter" && (
-                  <span className="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-primary align-middle" />
-                )}
-              </p>
-              <p className="mt-2 text-right font-hand text-base text-neutral-600">
-                — Seseorang
-              </p>
-            </div>
-            {phase === "question" ? (
-              <div className="mt-4 space-y-2">
-                <p className="text-center text-[10px] font-medium text-white/80">
-                  Jadi... gimana jawabanmu?
-                </p>
-                <div className="rounded-md bg-primary py-2.5 text-center text-[11px] font-bold text-white">
-                  Iya, aku juga suka kamu
-                </div>
-                <div className="rounded-md border border-white/20 bg-white/5 py-2.5 text-center text-[11px] text-white/70">
-                  Beri aku waktu dulu
-                </div>
-              </div>
-            ) : (
-              /* reply — kartu balasan, persis kartu aslinya */
-              <div className="mt-4 rounded-lg border border-white/20 bg-white/5 p-3 backdrop-blur">
-                <p className="text-[11px] font-bold text-white">
-                  Mau kirim pesan buat dia? 💬
-                </p>
-                {phase === "reply" ? (
-                  <div className="mt-2 flex items-center gap-1.5" aria-label="sedang menulis">
-                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white/70" />
-                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white/70 [animation-delay:0.2s]" />
-                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white/70 [animation-delay:0.4s]" />
-                  </div>
-                ) : (
-                  <p className="mt-1.5 text-[10px] leading-relaxed text-white/60">
-                    Balasannya muncul di dashboard pengirimnya — tanpa nama.
-                  </p>
-                )}
-              </div>
-            )}
           </div>
         )}
       </div>
@@ -422,8 +656,10 @@ export default function ConfessSection() {
                 <em className="text-primary">tulis di sini.</em>
               </h2>
               <p className="mt-3 max-w-md text-base leading-relaxed text-muted-foreground">
-                Isi form ini, dapat link, kirim ke dia. Dia buka dan membaca
-                suratmu dengan animasi amplop, lalu memilih jawabannya. Namamu{" "}
+                Isi form ini, dapat link, kirim ke dia. Dia membuka suratmu
+                lewat seremoni segel detak jantung — hatinya ditahan, retak,
+                lalu suratmu muncul baris demi baris — dan memilih jawabannya.
+                Namamu{" "}
                 <b className="text-foreground">baru muncul kalau dia menjawab &ldquo;iya&rdquo;</b> —
                 kalau tidak, kamu tetap anonim.
               </p>
