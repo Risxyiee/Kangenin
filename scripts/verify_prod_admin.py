@@ -89,9 +89,19 @@ if target:
     )
     check("PATCH status -> selesai", r.status_code == 200)
 
-    r = requests.get(f"{BASE}/api/admin/masukan", headers=H, timeout=30)
-    st = next((e["status"] for e in r.json().get("entries", []) if e["id"] == target["id"]), None)
-    check("status tersimpan = selesai", st == "selesai")
+    # Cache Hyperdrive bisa memegang hasil lama ±60-70 dtk (lihat wrangler.jsonc:
+    # caching dimatikan di binding — polling ini jaring pengaman masa transisi).
+    st = None
+    for _ in range(15):
+        r = requests.get(f"{BASE}/api/admin/masukan", headers=H, timeout=30)
+        st = next(
+            (e["status"] for e in r.json().get("entries", []) if e["id"] == target["id"]),
+            None,
+        )
+        if st == "selesai":
+            break
+        time.sleep(6)
+    check("status tersimpan = selesai (polling cache)", st == "selesai")
 
     r = requests.delete(
         f"{BASE}/api/admin/masukan",

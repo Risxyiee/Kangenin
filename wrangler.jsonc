@@ -24,6 +24,13 @@
       // menyebabkan koneksi zombie & query menggantung.
       "id": "01a56693e6eb4127a3bf81c99381b82b",
       "localConnectionString": "postgresql://postgres:postgres@localhost:5432/postgres"
+      // CATATAN 2026-11-02 — caching query Hyperdrive (TTL ±60 dtk) membuat
+      // read-after-write basi (insiden: PATCH status admin masukan sukses tapi
+      // GET langsung masih "baru" ±60-70 dtk). Matikan lewat DASHBOARD:
+      // Storage & Databases → Hyperdrive → config ini → Settings → Caching
+      // → Disable. (Field `caching` di binding TIDAK didukung wrangler 4.156.x
+      // — hanya warning "Unexpected fields" dan bisa di-reject API saat deploy,
+      // jadi sengaja tidak ditulis di sini.)
     }
   ],
   "ai": {

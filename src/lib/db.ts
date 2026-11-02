@@ -219,6 +219,13 @@ export function isUniqueViolation(err: unknown): boolean {
  * insiden lanjutan 2026-11-02: PATCH status admin masukan sukses tapi GET
  * langsung masih "baru" selama ±60-70 dtk karena komentar tanpa nama
  * fungsi ternyata tidak mem-bypass cache).
+ *
+ * CATATAN AKHIR 2026-11-02: trik komentar random() & literal unik TETAP kalah
+ * — normalisasi cache-key mencoret komentar dan menyeragamkan literal. Solusi
+ * finalnya di luar kode: matikan caching di konfigurasi Hyperdrive (dashboard
+ * → Storage & Databases → Hyperdrive → Settings → Caching → Disable). Fungsi
+ * ini kini hanya jaring pengaman kedua yang murah; biarkan tetap terpasang di
+ * semua read-after-write.
  */
 export function dbNonce(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)} random()`
