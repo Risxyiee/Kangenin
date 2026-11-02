@@ -5,14 +5,18 @@ import { describeError } from "@/lib/log-error";
 import { reportError } from "@/lib/monitor";
 
 /**
- * POST /api/image-to-text — deskripsi gambar via Workers AI (gratis).
+ * POST /api/image-to-text — deskripsi gambar via LLM vision gratis.
  *
- * Binding `AI` (Workers AI) hanya ada di runtime Cloudflare, jadi:
- * - produksi: getCloudflareContext().env.AI.run(...)
- * - lokal/dev: balas 503 dengan pesan jelas
+ * Rantai provider:
+ *   1. NVIDIA NIM — `nvidia/nemotron-3.5-super-vl-120b-a12b` (±4 dtk, teruji)
+ *      key: Secret Cloudflare `NVIDIA_API_KEY` (.env.local untuk dev)
+ *      Catatan: model ini reasoning — `max_tokens` MINIMAL 1200 supaya
+ *      token tidak habis di reasoning_content sebelum content tercetak.
+ *   2. Workers AI binding `AI` — `@cf/meta/llama-3.2-11b-vision-instruct`
+ *      (cadangan bila key NVIDIA tidak ada / gagal; perlu sekali "agree"
+ *      Meta License saat pertama dipakai).
  *
- * Dipakai nanti untuk fitur "upload screenshot → jadi bahan surat kangen".
- * Model vision gratis: @cf/meta/llama-3.2-11b-vision-instruct.
+ * Dipakai untuk fitur "upload screenshot → jadi bahan surat kangen".
  */
 
 // Tipe minimum binding Workers AI — hindari dependensi @cloudflare/workers-types
@@ -20,11 +24,27 @@ type AiBinding = {
   run(model: string, input: unknown): Promise<unknown>;
 };
 
-const MODEL = "@cf/meta/llama-3.2-11b-vision-instruct";
+const NVIDIA_ENDPOINT = "https://integrate.api.nvidia.com/v1/chat/completions";
+const NVIDIA_MODEL = "nvidia/nemotron-3.5-super-vl-120b-a12b";
+const WF_MODEL = "@cf/meta/llama-3.2-11b-vision-instruct";
+
 const ALLOWED = new Set(["image/jpeg", "image/png", "image/webp"]);
 const MAX_BYTES = 6 * 1024 * 1024; // 6 MB — model vision tak butuh lebih besar
 const DEFAULT_PROMPT =
   "Deskripsikan gambar ini secara singkat dan jelas dalam bahasa Indonesia.";
+const UPSTREAM_TIMEOUT_MS = 25_000; // vision + reasoning butuh waktu lebih
+
+function readSecret(name: string): string | undefined {
+  try {
+    const { env } = getCloudflareContext() as unknown as {
+      env?: Record<string, string | undefined>;
+    };
+    if (env?.[name]) return env[name];
+  } catch {
+    /* bukan runtime Cloudflare (next dev lokal) — lanjut ke process.env */
+  }
+  return process.env[name] || undefined;
+}
 
 function aiBinding(): AiBinding | undefined {
   try {
@@ -37,7 +57,7 @@ function aiBinding(): AiBinding | undefined {
   }
 }
 
-/* Model vision menerima gambar sebagai data URI base64 (bukan ArrayBuffer). */
+/* Kedua provider menerima gambar sebagai data URI base64 (bukan ArrayBuffer). */
 function toDataUri(bytes: ArrayBuffer, mime: string): string {
   const u8 = new Uint8Array(bytes);
   let bin = "";
@@ -48,21 +68,88 @@ function toDataUri(bytes: ArrayBuffer, mime: string): string {
   return `data:${mime};base64,${btoa(bin)}`;
 }
 
+async function visionNvidia(
+  key: string,
+  dataUri: string,
+  prompt: string
+): Promise<string> {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), UPSTREAM_TIMEOUT_MS);
+  try {
+    const res = await fetch(NVIDIA_ENDPOINT, {
+      method: "POST",
+      signal: ac.signal,
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: NVIDIA_MODEL,
+        max_tokens: 1500, // reasoning model — kekecilan = content kosong
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: prompt },
+              { type: "image_url", image_url: { url: dataUri } },
+            ],
+          },
+        ],
+      }),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      throw new Error(`nvidia HTTP ${res.status}: ${detail.slice(0, 200)}`);
+    }
+    const data = (await res.json()) as {
+      choices?: { message?: { content?: string } }[];
+    };
+    return data.choices?.[0]?.message?.content?.trim() ?? "";
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function visionWorkersAi(
+  ai: AiBinding,
+  messages: unknown
+): Promise<string> {
+  const runVision = () =>
+    ai.run(WF_MODEL, { messages, max_tokens: 512 }) as Promise<
+      { description?: string; response?: string } | string
+    >;
+
+  let result;
+  try {
+    result = await runVision();
+  } catch (firstErr) {
+    // Penyebab paling umum: Meta License model ini belum disetujui.
+    // Model card mewajibkan satu request awal { prompt: "agree" } —
+    // kirim sekali, lalu ulangi panggilan vision-nya.
+    console.warn(
+      "[image-to-text] run pertama gagal — kirim 'agree' Meta License lalu ulangi:",
+      describeError(firstErr)
+    );
+    try {
+      await ai.run(WF_MODEL, { prompt: "agree" });
+    } catch {
+      /* persetujuan gagal — ulangan tetap dicoba, error aslinya yang menang */
+    }
+    result = await runVision();
+  }
+
+  return typeof result === "string"
+    ? result
+    : (result?.description ?? result?.response ?? "");
+}
+
 export async function POST(req: NextRequest) {
-  // anti-spam: 10 gambar per 10 menit per IP (hemat kuota Neurons harian)
+  // anti-spam: 10 gambar per 10 menit per IP (hemat kuota model gratis)
   const rl = await rateLimit(req, "image-to-text", 10, 10 * 60 * 1000);
   if (!rl.ok) {
     return NextResponse.json(
       { error: "Terlalu sering — coba lagi beberapa menit lagi ya 😅" },
       { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } }
-    );
-  }
-
-  const ai = aiBinding();
-  if (!ai) {
-    return NextResponse.json(
-      { error: "Fitur AI hanya tersedia di deploy Cloudflare." },
-      { status: 503 }
     );
   }
 
@@ -104,52 +191,42 @@ export async function POST(req: NextRequest) {
 
   try {
     const bytes = await file.arrayBuffer();
-    const messages = [
+    const dataUri = toDataUri(bytes, file.type);
+    const wfMessages = [
       {
         role: "user",
         content: [
           { type: "text", text: prompt },
-          { type: "image_url", image_url: { url: toDataUri(bytes, file.type) } },
+          { type: "image_url", image_url: { url: dataUri } },
         ],
       },
     ];
 
-    const runVision = () =>
-      ai.run(MODEL, { messages, max_tokens: 512 }) as Promise<
-        { description?: string; response?: string } | string
-      >;
-
-    let result;
-    try {
-      result = await runVision();
-    } catch (firstErr) {
-      // Penyebab paling umum: Meta License model ini belum disetujui.
-      // Model card mewajibkan satu request awal { prompt: "agree" } —
-      // kirim sekali, lalu ulangi panggilan vision-nya.
-      console.warn(
-        "[image-to-text] run pertama gagal — kirim 'agree' Meta License lalu ulangi:",
-        describeError(firstErr)
-      );
+    // 1) NVIDIA vision (jika key ada)
+    const nvKey = readSecret("NVIDIA_API_KEY");
+    if (nvKey) {
       try {
-        await ai.run(MODEL, { prompt: "agree" });
-      } catch {
-        /* persetujuan gagal — ulangan tetap dicoba, error aslinya yang menang */
+        const desc = await visionNvidia(nvKey, dataUri, prompt);
+        if (desc) return NextResponse.json({ description: desc });
+      } catch (err) {
+        console.error(
+          "[image-to-text] NVIDIA gagal, coba Workers AI:",
+          describeError(err)
+        );
       }
-      result = await runVision();
     }
 
-    const description =
-      typeof result === "string"
-        ? result
-        : (result?.description ?? result?.response ?? "");
-
-    if (!description) {
-      return NextResponse.json(
-        { error: "AI tidak mengembalikan deskripsi. Coba gambar lain." },
-        { status: 502 }
-      );
+    // 2) cadangan Workers AI (hanya di runtime Cloudflare)
+    const ai = aiBinding();
+    if (ai) {
+      const desc = await visionWorkersAi(ai, wfMessages);
+      if (desc) return NextResponse.json({ description: desc });
     }
-    return NextResponse.json({ description });
+
+    return NextResponse.json(
+      { error: "Fitur vision belum diaktifkan di server ini." },
+      { status: 503 }
+    );
   } catch (err) {
     console.error("POST /api/image-to-text error:", describeError(err), err);
     reportError(err, { route: "POST /api/image-to-text" });

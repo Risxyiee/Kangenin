@@ -50,6 +50,7 @@ import { extractSpotifyTrackId } from "@/utils/spotify"
 import { FETCH_TIMEOUT_MESSAGE, fetchWithTimeout, isTimeoutError } from "@/lib/fetch-timeout"
 import { saveKadoHistoryEntry } from "@/lib/kado-history"
 import { compressImageFile, PHOTO_ACCEPT } from "@/lib/image-compress"
+import { AiAssistButton } from "@/components/ui/ai-assist"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tipe & konstanta
@@ -568,6 +569,21 @@ function StepIdentity(props: StepIdentityProps) {
           maxLength={1000}
           className={`${inputCls} resize-none`}
         />
+        <div className="mt-2">
+          {/* draft otomatis via AI (NVIDIA/OrcaRouter) — hasil tetap bisa diedit */}
+          <AiAssistButton
+            toName={props.targetName}
+            fromName={props.isAnonymous ? "" : props.senderName}
+            jenis="kado"
+            onDraft={props.onMessage}
+            blockedReason={
+              props.targetName.trim().length === 0
+                ? "Isi nama target dulu biar AI tahu buat siapa ✍️"
+                : null
+            }
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 text-xs font-medium text-zinc-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+          />
+        </div>
       </div>
 
       {/* Toggle anonim total */}
