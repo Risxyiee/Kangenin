@@ -7,7 +7,6 @@ import { findProhibited, MODERATION_ERROR } from "@/lib/moderation";
 import { describeError } from "@/lib/log-error";
 import { reportError } from "@/lib/monitor";
 import { THEME_KEYS, THEME_INVALID_MESSAGE, isThemeSelectable } from "@/lib/themes";
-import { scheduleOgWarm } from "@/lib/og-warm";
 
 const letterSchema = z.object({
   title: z.string().trim().min(2, "Judul surat minimal 2 karakter").max(80),
@@ -119,11 +118,6 @@ export async function POST(req: NextRequest) {
       }
       throw new Error("gagal membuat slug unik setelah 5 percobaan");
     });
-
-    // panaskan kartu OG personal sejak sekarang (waitUntil — gak menunda
-    // respons): saat link di-share, crawler WA dkk langsung dapat cache,
-    // gak jadi korban Error 1102 di jalur render satori
-    scheduleOgWarm(new URL(req.url).origin, set.slug);
 
     return NextResponse.json(
       { slug: set.slug, id: set.id, senderKey: set.senderKey },
