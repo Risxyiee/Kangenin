@@ -124,8 +124,16 @@ if pub:
     )
     check("unhide surat (pulihkan)", r.status_code == 200)
 
-    w = requests.get(f"{BASE}/api/wall", params={"limit": 96}, timeout=30).json()
-    check("surat kembali di /api/wall", any(x["id"] == pub["id"] for x in w.get("items", [])))
+    # Cache Hyperdrive ±60 dtk bisa masih pegang hasil saat surat disembunyikan
+    # (prilaku terdokumentasi di src/lib/db.ts) → polling maks 90 dtk.
+    back = False
+    for _ in range(15):
+        w = requests.get(f"{BASE}/api/wall", params={"limit": 96}, timeout=30).json()
+        if any(x["id"] == pub["id"] for x in w.get("items", [])):
+            back = True
+            break
+        time.sleep(6)
+    check("surat kembali di /api/wall (polling cache)", back)
 else:
     print("SKIP - tidak ada surat publik di dinding buat diuji hide/unhide", flush=True)
 
