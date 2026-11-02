@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
-import Landing from "@/components/landing/Landing";
+import Landing, { type LandingProps } from "@/components/landing/Landing";
 import ConfessionView from "@/components/confess/ConfessionView";
 import LettersView from "@/components/confess/LettersView";
 import StatusView from "@/components/confess/StatusView";
 import GiftView from "@/components/confess/GiftView";
 import { GIFT_META, type GiftType } from "@/lib/gift-data";
 import { db, withDbRetry } from "@/lib/db";
+import { toShowcaseItem, type ShowcaseItem } from "@/lib/papan";
 
 type Params = { searchParams: Promise<{ k?: string; s?: string; p?: string }> };
 
@@ -122,5 +123,33 @@ export default async function Page({ searchParams }: Params) {
   // Halaman status pengirim: /?s=<senderKey> → dashboard pantauan
   if (s) return <StatusView senderKey={s} />;
 
-  return <Landing />;
+  // Papan Pengakuan: isi confess yang pengirimnya IZINKAN tayang (opt-in dua
+  // flag: showMessage && isPublic, reportCount < 3). Isi sudah lewat moderasi
+  // di create + mask kontak di toShowcaseItem. DB gagal → papan kosong, jangan
+  // pernah 500-kan beranda gara-gara feed sosial.
+  let showcase: ShowcaseItem[] = [];
+  try {
+    const rows = await withDbRetry(() =>
+      db.confession.findMany({
+        where: { showMessage: true, isPublic: true, reportCount: { lt: 3 } },
+        orderBy: { createdAt: "desc" },
+        take: 14,
+        select: {
+          id: true,
+          fromName: true,
+          showAs: true,
+          toName: true,
+          theme: true,
+          message: true,
+          createdAt: true,
+          response: true,
+        },
+      })
+    );
+    showcase = rows.map(toShowcaseItem);
+  } catch (err) {
+    console.error("GET / (papan) error:", err);
+  }
+
+  return <Landing showcase={showcase} />;
 }

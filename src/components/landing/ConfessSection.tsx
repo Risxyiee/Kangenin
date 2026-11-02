@@ -17,6 +17,7 @@ import ConfessionView, { CONFESS_THEMES } from "@/components/confess/ConfessionV
 import { LS_KEYS, lsGet, lsSet } from "@/lib/local-store";
 import { FETCH_TIMEOUT_MESSAGE, fetchWithTimeout, isTimeoutError } from "@/lib/fetch-timeout";
 import { AiAssistButton } from "@/components/ui/ai-assist";
+import type { PapanMode } from "@/lib/papan";
 
 /* alur demo = CERMIN PERSIS alur asli PremiumConfess (Heartstring Edition):
    segel lilin → tahan detak (3 reward) → hati retak → surat baris demi baris
@@ -480,7 +481,9 @@ export default function ConfessSection() {
   const [toName, setToName] = useState("");
   const [message, setMessage] = useState("");
   const [theme, setTheme] = useState("rose");
-  const [showOnWall, setShowOnWall] = useState(false);
+  // Papan Pengakuan: "off"=privat, "anonim"/"nama" = isi surat tayang di
+  // halaman depan dengan identitas pilihan pengirim
+  const [wallMode, setWallMode] = useState<PapanMode>("off");
   const [unlockPreset, setUnlockPreset] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -550,7 +553,9 @@ export default function ConfessSection() {
             toName: toName.trim(),
             message: message.trim(),
             theme,
-            isPublic: showOnWall,
+            isPublic: wallMode !== "off",
+            showMessage: wallMode !== "off",
+            showAs: wallMode === "nama" ? "nama" : "anonim",
             unlockAt: unlockDateFor(unlockPreset),
           }),
         },
@@ -813,20 +818,61 @@ export default function ConfessSection() {
                     </select>
                   </div>
 
-                  {/* opt-in dinding publik — mesin viral, isi surat TETAP rahasia */}
-                  <label className="flex cursor-pointer items-start gap-3 rounded-md border border-border bg-secondary/40 p-3.5 transition hover:bg-secondary">
-                    <input
-                      type="checkbox"
-                      checked={showOnWall}
-                      onChange={(e) => setShowOnWall(e.target.checked)}
-                      className="mt-0.5 h-4 w-4 accent-primary"
-                    />
-                    <span className="text-xs leading-relaxed text-foreground">
-                      <b>Tampilkan di Dinding Kangenin</b> — namamu &amp; tema
-                      suratnya ikut pajangan publik biar orang lain ikut
-                      berani. Isi surat <b>100% tetap rahasia</b>, kok.
-                    </span>
-                  </label>
+                  {/* Papan Pengakuan — opt-in 3 mode: pengirim pilih privat /
+                      anonim / nama depan. Bisa diubah kapan pun lewat dashboard. */}
+                  <div className="space-y-2">
+                    <Label className="text-foreground">
+                      Mau tayang juga di halaman depan?{" "}
+                      <span className="font-normal text-muted-foreground">
+                        (opsional)
+                      </span>
+                    </Label>
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      {(
+                        [
+                          {
+                            v: "off",
+                            t: "Privat",
+                            d: "Cuma dia yang bisa baca",
+                          },
+                          {
+                            v: "anonim",
+                            t: "Tayang · anonim",
+                            d: "Isi suratmu pajang, tanpa nama",
+                          },
+                          {
+                            v: "nama",
+                            t: "Tayang · nama depan",
+                            d: "Pamer kamu yang berani",
+                          },
+                        ] as { v: PapanMode; t: string; d: string }[]
+                      ).map((o) => (
+                        <button
+                          key={o.v}
+                          type="button"
+                          onClick={() => setWallMode(o.v)}
+                          aria-pressed={wallMode === o.v}
+                          className={`rounded-lg border p-3 text-left transition ${
+                            wallMode === o.v
+                              ? "border-primary bg-primary/5"
+                              : "border-border hover:border-input"
+                          }`}
+                        >
+                          <span className="block text-xs font-bold text-foreground">
+                            {o.t}
+                          </span>
+                          <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">
+                            {o.d}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[11px] leading-relaxed text-muted-foreground">
+                      {wallMode === "off"
+                        ? "Default paling aman — suratmu nggak akan muncul di mana-mana."
+                        : "Kartumu nongol di Papan Pengakuan (beranda). Nama dia ikut tampil — nama depannya aja. Bisa diganti jadi privat kapan saja lewat halaman pantauan."}
+                    </p>
+                  </div>
 
                   {error && (
                     <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -869,6 +915,15 @@ export default function ConfessSection() {
                       pengirimnya rahasia. Antisipasinya bikin deg-degan —
                       itu gunanya.
                     </p>
+                  )}
+                  {wallMode !== "off" && (
+                    <a
+                      href="/#papan"
+                      className="block rounded-md border border-primary/30 bg-primary/5 px-3 py-2.5 text-xs font-semibold text-primary transition hover:bg-primary/10"
+                    >
+                      ✨ Pengakuanmu bakal nongol di Papan halaman depan —
+                      semua orang bisa lihat. Lihat posisinya →
+                    </a>
                   )}
                   <div className="flex items-center gap-2 rounded-md border border-border bg-background p-3 text-left">
                     <span className="flex-1 truncate text-sm font-medium text-foreground">
@@ -970,6 +1025,7 @@ export default function ConfessSection() {
                       setMessage("");
                       setFromName("");
                       setToName("");
+                      setWallMode("off");
                     }}
                     className="text-xs font-semibold text-primary underline underline-offset-2 hover:text-primary/80"
                   >

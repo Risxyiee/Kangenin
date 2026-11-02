@@ -35,6 +35,13 @@ const SECTIONS: Array<{ title: string; body: string[] }> = [
     ],
   },
   {
+    title: "Dinding & Papan Pengakuan — selalu opt-in",
+    body: [
+      "Kami punya dua pajangan publik: Dinding (cuma nama, tema, dan reaksi — isi surat TIDAK ikut) dan Papan Pengakuan di halaman depan (isi surat ikut tampil). Keduanya hanya berisi surat yang pengirimnya sendiri memilih opsi tayang; default-nya privat.",
+      "Di Papan, kamu pilih tampil sebagai anonim atau nama depan saja. Nama penerima juga cuma ditulis nama depannya, dan nomor telepon/email/link di isi surat otomatis ditutup. Mau menarik suratmu dari pajangan? Buka link pantauanmu (?s=...) dan ganti jadi privat — langsung hilang dari publik.",
+    ],
+  },
+  {
     title: "Konten dilaporkan",
     body: [
       "Jika sebuah konten dilaporkan 3 kali, konten otomatis disembunyikan sementara dan ditinjau. Kami berhak menghapus konten yang melanggar (pelecehan, ancaman, SARA, atau hal ilegal lainnya).",

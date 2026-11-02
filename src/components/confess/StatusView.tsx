@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { CONFESS_THEMES } from "@/components/confess/ConfessionView";
 import { LS_KEYS, lsGet } from "@/lib/local-store";
+import { papanModeOf, type PapanMode } from "@/lib/papan";
 
 type LetterStatus = {
   order: number;
@@ -52,6 +53,8 @@ type StatusData = {
   reply?: string | null;
   repliedAt?: string | null;
   isPublic?: boolean;
+  showMessage?: boolean;
+  showAs?: string;
   // khusus letters
   startedAt?: string | null;
   total?: number;
@@ -636,26 +639,33 @@ export default function StatusView({ senderKey }: { senderKey: string }) {
   const [refreshing, setRefreshing] = useState(false);
   const [saved, setSaved] = useState<SavedItem[]>([]);
   const [listOpen, setListOpen] = useState(false);
-  // kontrol Dinding Kangenin — null = belum disentuh, tampilkan nilai server
-  const [wallOn, setWallOn] = useState<boolean | null>(null);
+  // kontrol Papan Pengakuan — null = belum disentuh, tampilkan nilai server
+  const [wallMode, setWallMode] = useState<PapanMode | null>(null);
   const [wallBusy, setWallBusy] = useState(false);
   const [wallErr, setWallErr] = useState("");
 
-  async function toggleWall() {
-    if (!data || wallBusy) return;
-    const next = !(wallOn ?? !!data.isPublic);
-    setWallOn(next); // optimis — rollback kalau server nolak
+  const modeNow: PapanMode =
+    wallMode ??
+    papanModeOf(
+      data?.isPublic ?? false,
+      data?.showMessage ?? false,
+      data?.showAs ?? "anonim"
+    );
+
+  async function applyWallMode(mode: PapanMode) {
+    if (!data || wallBusy || mode === modeNow) return;
+    setWallMode(mode); // optimis — rollback kalau server nolak
     setWallBusy(true);
     setWallErr("");
     try {
       const res = await fetch(`/api/status/${senderKey}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isPublic: next }),
+        body: JSON.stringify({ wallMode: mode }),
       });
       if (!res.ok) throw new Error("gagal");
     } catch {
-      setWallOn(!next);
+      setWallMode(modeNow); // rollback ke nilai sebelumnya
       setWallErr("Gagal menyimpan — coba lagi ya.");
     } finally {
       setWallBusy(false);
@@ -965,50 +975,51 @@ export default function StatusView({ senderKey }: { senderKey: string }) {
               </div>
             </div>
 
-            {/* kontrol Dinding Kangenin — opt-in bisa diubah kapan saja,
-                isi surat TIDAK PERNAH ikut tampil publik */}
+            {/* kontrol Papan Pengakuan — 3 mode, bisa diganti kapan saja */}
             <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-4 backdrop-blur">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-bold text-rose-100">
-                    Tampil di Dinding Kangenin
-                  </p>
-                  <p className="mt-1 text-xs leading-relaxed text-white/50">
-                    Nama &amp; tema suratmu pajang di{" "}
-                    <a
-                      href="/dinding"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="font-semibold text-rose-300 underline decoration-rose-400/50 underline-offset-2"
-                    >
-                      dinding publik
-                    </a>{" "}
-                    biar orang lain ikut berani — isi surat 100% tetap
-                    rahasia.
-                  </p>
-                  {wallErr && (
-                    <p className="mt-2 text-[11px] font-medium text-amber-300">
-                      {wallErr}
-                    </p>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={wallOn ?? !!data.isPublic}
-                  disabled={wallBusy}
-                  onClick={toggleWall}
-                  className={`relative mt-1 h-7 w-12 shrink-0 rounded-full transition-colors disabled:opacity-60 ${
-                    wallOn ?? !!data.isPublic ? "bg-rose-500" : "bg-white/15"
-                  }`}
-                >
-                  <span
-                    className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-all ${
-                      wallOn ?? !!data.isPublic ? "left-6" : "left-1"
+              <p className="text-sm font-bold text-rose-100">
+                Tayang di Papan Pengakuan
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-white/50">
+                {modeNow === "off"
+                  ? "Privat — suratmu cuma bisa dibaca dia lewat link rahasianya."
+                  : modeNow === "anonim"
+                    ? "Isi suratmu tayang di Papan (halaman depan) sebagai “Seseorang” — identitasmu tetap misterius."
+                    : "Isi suratmu + nama depanmu tayang di Papan (halaman depan) — pamer bahwa kamu yang berani."}
+              </p>
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                {(["off", "anonim", "nama"] as PapanMode[]).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    aria-pressed={modeNow === m}
+                    disabled={wallBusy}
+                    onClick={() => applyWallMode(m)}
+                    className={`rounded-lg border px-2 py-2.5 text-[11px] font-bold transition disabled:opacity-60 ${
+                      modeNow === m
+                        ? "border-rose-400/70 bg-rose-500/20 text-white"
+                        : "border-white/15 bg-white/5 text-white/60 hover:border-white/35 hover:text-white"
                     }`}
-                  />
-                </button>
+                  >
+                    {m === "off" ? "Privat" : m === "anonim" ? "Anonim" : "Nama depan"}
+                  </button>
+                ))}
               </div>
+              {wallErr && (
+                <p className="mt-2 text-[11px] font-medium text-amber-300">
+                  {wallErr}
+                </p>
+              )}
+              {modeNow !== "off" && (
+                <a
+                  href="/#papan"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-3 inline-block text-[11px] font-semibold text-rose-300 underline decoration-rose-400/50 underline-offset-2"
+                >
+                  lihat kartumu di Papan halaman depan →
+                </a>
+              )}
             </div>
 
             {/* daftar confess lain dari localStorage */}

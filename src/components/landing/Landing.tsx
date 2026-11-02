@@ -1,8 +1,11 @@
 "use client";
 
+import type { ShowcaseItem } from "@/lib/papan";
+
 import Navbar from "./Navbar";
 import Hero from "./Hero";
 import Marquee from "./Marquee";
+import ShowcaseSection from "./ShowcaseSection";
 import ConfessSection from "./ConfessSection";
 import StatusTeaser from "./StatusTeaser";
 import KadoSurpriseSection from "./KadoSurpriseSection";
@@ -12,13 +15,20 @@ import Pricing from "./Pricing";
 import Faq from "./Faq";
 import FooterCta from "./FooterCta";
 
-export default function Landing() {
+export type LandingProps = {
+  /** Isi confess yang pengirimnya izinkan tayang di Papan Pengakuan —
+   *  diambil server-side di page.tsx (modalitas publik, sudah disanitasi). */
+  showcase?: ShowcaseItem[];
+};
+
+export default function Landing({ showcase = [] }: LandingProps) {
   return (
     <div className="flex min-h-screen flex-col">
       <Navbar />
       <main className="flex-1">
         <Hero />
         <Marquee />
+        <ShowcaseSection items={showcase} />
         <ConfessSection />
         <StatusTeaser />
         <KadoSurpriseSection />

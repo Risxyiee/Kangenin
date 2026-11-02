@@ -12,8 +12,11 @@ export const runtime = "nodejs";
 // GET   /api/admin/dinding — semua confess yang tampil di dinding ATAU pernah
 //                          dilaporkan (reportCount > 0), terbaru dulu.
 // PATCH /api/admin/dinding — aksi moderasi:
-//   hide   → isPublic = false (surat keluar dari dinding, datanya utuh)
-//   unhide → isPublic = true + reportCount di-reset (sudah direview owner)
+//   hide   → isPublic = false + showMessage = false (surat keluar dari dinding
+//            DAN Papan Pengakuan, datanya utuh)
+//   unhide → isPublic = true + reportCount di-reset (sudah direview owner);
+//            showMessage tidak disentuh — kalau sebelumnya ikut papan,
+//            otomatis muncul lagi di papan
 //   delete → hapus permanen (reaksi ikut terhapus lewat cascade)
 //
 // Catatan privasi: isi surat hanya kelihatan di sini (gerbang admin), dan UI
@@ -52,6 +55,8 @@ export async function GET(req: NextRequest) {
           theme: true,
           message: true,
           isPublic: true,
+          showMessage: true,
+          showAs: true,
           reportCount: true,
           views: true,
           response: true,
@@ -70,6 +75,8 @@ export async function GET(req: NextRequest) {
           theme: r.theme,
           message: r.message,
           isPublic: r.isPublic,
+          showMessage: r.showMessage,
+          showAs: r.showAs,
           reportCount: r.reportCount,
           views: r.views,
           answered: r.response !== null && r.response !== undefined,
@@ -130,7 +137,7 @@ export async function PATCH(req: NextRequest) {
 
     const data =
       action === "hide"
-        ? { isPublic: false }
+        ? { isPublic: false, showMessage: false } // keluar dari dinding + papan sekaligus
         : { isPublic: true, reportCount: 0 }; // unhide: laporan sudah direview
 
     const upd = await withDbRetry(() =>

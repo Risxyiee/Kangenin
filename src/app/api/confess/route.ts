@@ -20,6 +20,11 @@ const confessSchema = z.object({
   theme: z.enum(THEME_KEYS).optional().default("rose"),
   // opt-in tampil di Dinding Kangenin (cuma nama & tema — isi surat tidak)
   isPublic: z.boolean().optional().default(false),
+  // Papan Pengakuan (halaman depan): isi surat ikut tayang — opt-in eksplisit.
+  // showMessage=true memaksa isPublic=true di server (tidak percaya client).
+  showMessage: z.boolean().optional().default(false),
+  // identitas pengirim di papan: "anonim" | "nama" (kata pertama fromName)
+  showAs: z.enum(["anonim", "nama"]).optional().default("anonim"),
   // kirim terjadwal: ISO string, wajib masa depan, maks 30 hari ke depan
   unlockAt: z.string().datetime({ offset: true }).optional().nullable(),
 });
@@ -51,7 +56,10 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
-    const { fromName, toName, message, theme, isPublic, unlockAt } = parsed.data;
+    const { fromName, toName, message, theme, isPublic, showMessage, showAs, unlockAt } =
+      parsed.data;
+    // papan menyalakan dinding juga (isi tampil > cukup nama tampil), bukan sebaliknya
+    const isPublicFinal = isPublic || showMessage;
 
     // tema edisi terbatas yang sudah lewat tidak boleh dipakai walau client
     // lawas masih mengirimnya
@@ -108,7 +116,9 @@ export async function POST(req: NextRequest) {
               toName,
               message,
               theme,
-              isPublic,
+              isPublic: isPublicFinal,
+              showMessage,
+              showAs,
               ...(unlock ? { unlockAt: unlock } : {}),
             },
           });

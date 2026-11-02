@@ -23,6 +23,13 @@ model Confession {
   reportCount Int       @default(0) // >=3 → konten disembunyikan sementara
   // opt-in tampil di Dinding Kangenin (cuma nama & tema, ISI SURAT TIDAK) — mesin FOMO
   isPublic    Boolean   @default(false)
+  // Papan Pengakuan (halaman depan): ISI SURAT ikut tampil publik — opt-in
+  // eksplisit pengirim, LEBAR dari isPublic (feed papan selalu memfilter
+  // isPublic=true juga, jadi admin "hide" otomatis mencabut dari papan).
+  showMessage Boolean   @default(false)
+  // cara pengirim tampil di papan: "anonim" | "nama" (kata pertama fromName;
+  // fromName kosong → fallback "Seseorang")
+  showAs      String    @default("anonim")
   // kirim terjadwal: surat terkunci sampai waktu ini (countdown kejutan)
   unlockAt    DateTime?
   createdAt   DateTime  @default(now())

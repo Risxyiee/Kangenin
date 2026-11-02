@@ -53,6 +53,8 @@ type DindingItem = {
   theme: string;
   message: string;
   isPublic: boolean;
+  showMessage?: boolean;
+  showAs?: string;
   reportCount: number;
   views: number;
   answered: boolean;
@@ -735,6 +737,11 @@ export default function AdminBoard() {
                     >
                       {d.isPublic ? "Tampil di dinding" : "Disembunyikan"}
                     </span>
+                    {d.showMessage && (
+                      <span className="rounded-full bg-fuchsia-100 px-2.5 py-0.5 font-medium text-fuchsia-800">
+                        Papan: {d.showAs === "nama" ? "nama depan" : "anonim"}
+                      </span>
+                    )}
                     {d.reportCount > 0 && (
                       <span className="rounded-full bg-destructive/10 px-2.5 py-0.5 font-semibold text-destructive">
                         ⚠ dilaporkan {d.reportCount}×

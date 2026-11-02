@@ -175,6 +175,16 @@
   to { transform: translateX(-50%); }
 }
 
+/* Papan Pengakuan: hover = jeda track biar nyaman dibaca */
+.papan-row:hover .papan-track {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .papan-track {
+    animation: none !important;
+  }
+}
+
 @keyframes flame-flicker {
   0%, 100% { transform: scale(1) rotate(-2deg); opacity: 1; }
   25% { transform: scale(1.15, 0.92) rotate(3deg); opacity: 0.9; }

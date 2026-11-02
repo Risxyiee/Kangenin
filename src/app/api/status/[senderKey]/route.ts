@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, withDbRetry } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
+import { asPapanMode, papanDataFor } from "@/lib/papan";
 import { describeError } from "@/lib/log-error";
 import { reportError } from "@/lib/monitor";
 
@@ -31,6 +32,8 @@ export async function GET(
         openedAt: true,
         respondedAt: true,
         isPublic: true,
+        showMessage: true,
+        showAs: true,
       },
     }));
 
@@ -140,10 +143,15 @@ export async function GET(
 }
 
 // PATCH /api/status/<senderKey> — pengirim mengubah setelan suratnya sendiri.
-// Sekarang: opt-in/out Dinding Kangenin (isPublic). senderKey = kunci
-// kepemilikan (cuma pengirim yang punya link halaman ini). Cuma confess yang
-// punya dinding — letters & gift tidak tersentuh (updateMany 0 baris → 404).
-// Isi surat TIDAK PERNAH ikut ke dinding; yang tampil cuma nama & tema.
+// Dua jalur:
+//   1) { wallMode: "off"|"anonim"|"nama" } → Papan Pengakuan + dinding
+//      ("off"=privat; "anonim"/"nama" = isi surat tayang di halaman depan,
+//       dengan identitas sesuai pilihan — selalu disertai isPublic=true)
+//   2) { isPublic: boolean } → jalur lawas dinding teaser (nama & tema saja),
+//      showMessage TIDAK disentuh — app versi lama tetap aman.
+// senderKey = kunci kepemilikan (cuma pengirim yang punya link halaman ini).
+// Cuma confess yang punya papan/dinding — letters & gift tak tersentuh
+// (updateMany 0 baris → 404).
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ senderKey: string }> }
@@ -161,7 +169,28 @@ export async function PATCH(
 
     const body = (await req.json().catch(() => null)) as {
       isPublic?: unknown;
+      wallMode?: unknown;
     } | null;
+
+    // jalur baru: mode papan lengkap
+    const mode = asPapanMode(body?.wallMode);
+    if (mode) {
+      const updated = await withDbRetry(() =>
+        db.confession.updateMany({
+          where: { senderKey },
+          data: papanDataFor(mode),
+        })
+      );
+      if (updated.count === 0) {
+        return NextResponse.json(
+          { error: "Status tidak ditemukan. Buka lewat link yang kamu simpan ya." },
+          { status: 404 }
+        );
+      }
+      return NextResponse.json({ success: true, wallMode: mode });
+    }
+
+    // jalur lawas: teaser dinding saja
     if (typeof body?.isPublic !== "boolean") {
       return NextResponse.json({ error: "Setelan tidak valid" }, { status: 400 });
     }
