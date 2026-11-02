@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Prisma } from "@prisma/client";
-import { db, withDbRetry } from "@/lib/db";
+import { db, withDbRetry, isRecordNotFound } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
 import { describeError } from "@/lib/log-error";
 import { reportError } from "@/lib/monitor";
@@ -59,8 +58,9 @@ export async function DELETE(
     } catch (err) {
       // P2025 = record not found — kadonya memang sudah tidak ada.
       // Respons tetap sukses: hapus bersifat idempoten, dua kali tekan hapus
-      // tidak boleh bikin user melihat error.
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
+      // tidak boleh bikin user melihat error. Cek pakai helper bersama —
+      // driver adapter bisa membungkus P2025 beda bentuk dari engine klasik.
+      if (isRecordNotFound(err)) {
         return NextResponse.json(
           { success: true, alreadyGone: true },
           { headers: { "Cache-Control": "no-store, max-age=0" } }

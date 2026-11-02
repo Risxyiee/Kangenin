@@ -205,6 +205,23 @@ export function isUniqueViolation(err: unknown): boolean {
 }
 
 /**
+ * Deteksi "record tidak ditemukan" (P2025) — antar varian error adapter
+ * (sama seperti isUniqueViolation: driver adapter bisa membungkus error
+ * berbeda dari engine klasik, jadi kode error DAN pesan keduanya dicek).
+ * Dipakai DELETE idempoten (mis. hapus kado): baris yang memang sudah tidak
+ * ada TIDAK boleh dilempar sebagai 500 ke user.
+ */
+export function isRecordNotFound(err: unknown): boolean {
+  if (err instanceof Prisma.PrismaClientKnownRequestError) return err.code === 'P2025'
+  const code = (err as { code?: string })?.code
+  if (code === 'P2025') return true
+  const msg = err instanceof Error ? err.message : String(err)
+  // sengaja TIDAK memakai pola umum semacam "no result" — terlalu gampang
+  // menyamarkan error asli jadi "sudah terhapus"
+  return /P2025|record to delete does not exist|record not found/i.test(msg)
+}
+
+/**
  * Nonce anti-cache Hyperdrive untuk bacaan read-after-write.
  *
  * PENTING (temuan produksi 2026-11-02): Hyperdrive mengunci cache pada TEKS
