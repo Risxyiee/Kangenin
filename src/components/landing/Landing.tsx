@@ -1,7 +1,5 @@
 "use client";
 
-import type { ShowcaseItem } from "@/lib/papan";
-
 import Navbar from "./Navbar";
 import Hero from "./Hero";
 import Marquee from "./Marquee";
@@ -15,20 +13,16 @@ import Pricing from "./Pricing";
 import Faq from "./Faq";
 import FooterCta from "./FooterCta";
 
-export type LandingProps = {
-  /** Isi confess yang pengirimnya izinkan tayang di Papan Pengakuan —
-   *  diambil server-side di page.tsx (modalitas publik, sudah disanitasi). */
-  showcase?: ShowcaseItem[];
-};
+export type LandingProps = Record<string, never>;
 
-export default function Landing({ showcase = [] }: LandingProps) {
+export default function Landing() {
   return (
     <div className="flex min-h-screen flex-col">
       <Navbar />
       <main className="flex-1">
         <Hero />
         <Marquee />
-        <ShowcaseSection items={showcase} />
+        <ShowcaseSection />
         <ConfessSection />
         <StatusTeaser />
         <KadoSurpriseSection />

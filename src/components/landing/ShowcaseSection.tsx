@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { relTime, type ShowcaseItem } from "@/lib/papan";
 
@@ -17,11 +18,29 @@ const THEME_SWATCH: Record<string, string> = {
 // sosial level tertinggi: bukan klaim, isi suratnya kelihatan. Dua baris
 // marquee berlawanan arah biar papan terasa hidup; hover = berhenti biar
 // nyaman dibaca.
-export default function ShowcaseSection({ items }: { items: ShowcaseItem[] }) {
+//
+// Feed diambil CLIENT-SIDE dari /api/papan (perbaikan Error 1102: SSR
+// beranda gak lagi jalankan query + render marquee di setiap request).
+// `items === null` = masih loading → skeleton, jangan langsung "sepi"
+// supaya gak menyesatkan.
+export default function ShowcaseSection() {
+  const [items, setItems] = useState<ShowcaseItem[] | null>(null);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    fetch("/api/papan", { signal: ctrl.signal })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((d: { items?: ShowcaseItem[] }) => setItems(d.items ?? []))
+      .catch(() => {
+        if (!ctrl.signal.aborted) setItems([]);
+      });
+    return () => ctrl.abort();
+  }, []);
+
   // baris 1 & 2 dibelah dua; fallback 1 baris kalau itemnya sedikit
-  const half = Math.ceil(items.length / 2);
-  const rowA = items.slice(0, half);
-  const rowB = items.slice(half);
+  const half = Math.ceil((items?.length ?? 0) / 2);
+  const rowA = items?.slice(0, half) ?? [];
+  const rowB = items?.slice(half) ?? [];
 
   const renderRow = (list: ShowcaseItem[], reverse: boolean, keyPrefix: string) => {
     if (list.length === 0) return null;
@@ -117,7 +136,18 @@ export default function ShowcaseSection({ items }: { items: ShowcaseItem[] }) {
         </div>
 
         <div className="mt-8">
-          {items.length === 0 ? (
+          {items === null ? (
+            /* loading → skeleton kartu, bukan "sepi" */
+            <div className="flex justify-center gap-4 overflow-hidden px-4 py-2">
+              {[0, 1, 2].map((i) => (
+                <div
+                  key={i}
+                  className="h-[148px] w-[270px] shrink-0 animate-pulse rounded-xl border border-white/10 bg-white/[0.045] sm:w-[300px]"
+                  aria-hidden
+                />
+              ))}
+            </div>
+          ) : items.length === 0 ? (
             <div className="mx-auto max-w-md px-4">
               <div className="rounded-xl border border-white/10 bg-white/[0.04] p-8 text-center backdrop-blur">
                 <p className="font-hand text-2xl text-[#e8b4bb]">

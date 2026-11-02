@@ -36,6 +36,7 @@ import {
   type LucideIcon,
 } from "lucide-react"
 import { QRCodeSVG } from "qrcode.react"
+import UlasanCard from "./UlasanCard"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tipe & konstanta
@@ -326,6 +327,12 @@ export default function ShareDashboard(props: ShareDashboardProps) {
               targetName={props.targetName}
               kadoStatus={props.kadoStatus}
             />
+          </Card>
+
+          {/* Ulasan — paling bawah, bisa di-skip sekali ketuk; jangan menghalangi
+              alur share (aturan founder: user gak boleh kabur gara-gara form) */}
+          <Card delay={0.28} reduceMotion={reduceMotion ?? false}>
+            <UlasanCard kadoId={props.kadoId} />
           </Card>
         </div>
 

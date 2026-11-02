@@ -1,12 +1,11 @@
 import type { Metadata } from "next";
-import Landing, { type LandingProps } from "@/components/landing/Landing";
+import Landing from "@/components/landing/Landing";
 import ConfessionView from "@/components/confess/ConfessionView";
 import LettersView from "@/components/confess/LettersView";
 import StatusView from "@/components/confess/StatusView";
 import GiftView from "@/components/confess/GiftView";
 import { GIFT_META, type GiftType } from "@/lib/gift-data";
-import { db, withDbRetry } from "@/lib/db";
-import { toShowcaseItem, type ShowcaseItem } from "@/lib/papan";
+import { detectKind } from "@/lib/detect";
 
 type Params = { searchParams: Promise<{ k?: string; s?: string; p?: string }> };
 
@@ -26,22 +25,9 @@ export async function generateMetadata({ searchParams }: Params): Promise<Metada
 
   // link kado penerima
   if (k) {
-    const [confession, letterSet, gift] = await withDbRetry(() =>
-      Promise.all([
-        db.confession.findUnique({
-          where: { slug: k },
-          select: { toName: true },
-        }),
-        db.letterSet.findUnique({
-          where: { slug: k },
-          select: { toName: true, _count: { select: { letters: true } } },
-        }),
-        db.gift.findUnique({
-          where: { slug: k },
-          select: { toName: true, type: true },
-        }),
-      ]
-    ));
+    // detectKind = React cache() → query yang sama dengan Page di bawah
+    // cuma jalan SEKALI per request (dulu 6 query, sekarang 3 — perbaikan 1102)
+    const { confession, letterSet, gift } = await detectKind(k);
 
     if (letterSet) {
       const title = `${letterSet._count.letters} surat kecil buat ${letterSet.toName}`;
@@ -108,13 +94,7 @@ export default async function Page({ searchParams }: Params) {
   // Link kado penerima: /?k=<slug> → surat fullscreen
   // (confess biasa / open-when letters / kado digital — deteksi dari DB)
   if (k) {
-    const [confession, letterSet, gift] = await withDbRetry(() =>
-      Promise.all([
-        db.confession.findUnique({ where: { slug: k }, select: { id: true } }),
-        db.letterSet.findUnique({ where: { slug: k }, select: { id: true } }),
-        db.gift.findUnique({ where: { slug: k }, select: { id: true } }),
-      ])
-    );
+    const { letterSet, gift } = await detectKind(k);
     if (letterSet) return <LettersView slug={k} previewKey={p} />;
     if (gift) return <GiftView slug={k} previewKey={p} />;
     return <ConfessionView slug={k} previewKey={p} />; // view sendiri menangani 404
@@ -123,33 +103,10 @@ export default async function Page({ searchParams }: Params) {
   // Halaman status pengirim: /?s=<senderKey> → dashboard pantauan
   if (s) return <StatusView senderKey={s} />;
 
-  // Papan Pengakuan: isi confess yang pengirimnya IZINKAN tayang (opt-in dua
-  // flag: showMessage && isPublic, reportCount < 3). Isi sudah lewat moderasi
-  // di create + mask kontak di toShowcaseItem. DB gagal → papan kosong, jangan
-  // pernah 500-kan beranda gara-gara feed sosial.
-  let showcase: ShowcaseItem[] = [];
-  try {
-    const rows = await withDbRetry(() =>
-      db.confession.findMany({
-        where: { showMessage: true, isPublic: true, reportCount: { lt: 3 } },
-        orderBy: { createdAt: "desc" },
-        take: 14,
-        select: {
-          id: true,
-          fromName: true,
-          showAs: true,
-          toName: true,
-          theme: true,
-          message: true,
-          createdAt: true,
-          response: true,
-        },
-      })
-    );
-    showcase = rows.map(toShowcaseItem);
-  } catch (err) {
-    console.error("GET / (papan) error:", err);
-  }
-
-  return <Landing showcase={showcase} />;
+  // Papan Pengakuan kini diambil CLIENT-SIDE lewat /api/papan (perbaikan
+  // Error 1102: SSR beranda dulu menjalankan query + mask + render 28 kartu
+  // marquee di SETIAP request — CPU Worker kepangkas terus). Sekarang SSR
+  // beranda nol query DB; papan muncul setelah hidrasi, tetap opt-in dua
+  // flag (showMessage && isPublic, reportCount < 3) + mask kontak di API.
+  return <Landing />;
 }

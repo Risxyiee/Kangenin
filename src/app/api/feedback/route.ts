@@ -35,7 +35,7 @@ import { reportError } from "@/lib/monitor";
 const feedbackSchema = z.object({
   message: z.string().trim().min(3, "Ceritanya kependekan").max(1000),
   rating: z.number().int().min(1).max(5).nullable().optional(),
-  category: z.enum(["bug", "fitur", "desain", "lainnya"]).nullable().optional(),
+  category: z.enum(["bug", "fitur", "desain", "lainnya", "ulasan"]).nullable().optional(),
   contact: z.string().trim().max(100).nullable().optional(),
   path: z.string().trim().max(300).nullable().optional(),
   // honeypot — manusia nggak bisa mengisi field ini (tersembunyi di form)

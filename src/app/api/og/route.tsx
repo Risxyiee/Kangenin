@@ -8,7 +8,35 @@ export const runtime = "nodejs";
 // /api/og            → kartu generik (landing)
 // /api/og?k=<slug>   → kartu personal ("Ada surat rahasia buat Sari")
 // Catatan: tanpa emoji — satori butuh font emoji khusus, kita gambar hati pakai div.
+
+/**
+ * Cache-API Workers (perbaikan Error 1102): render satori+resvg itu operasi
+ * CPU paling berat di seluruh situs (mudah 30-100ms, budget Worker plan free
+ * cuma 10ms). Crawler WA/Twitter/Discord memfetch URL yang sama berkali-kali
+ * saat link viral — mulai sekarang render cuma SEKALI per URL per PoP, sisanya
+ * dilayani caches.default. Fallback aman: kalau Cache API tak tersedia
+ * (next dev lokal), tinggal render biasa.
+ */
+const ogCache = (): Cache | null => {
+  try {
+    return (globalThis as { caches?: { default: Cache } }).caches?.default ?? null;
+  } catch {
+    return null;
+  }
+};
+
 export async function GET(req: Request) {
+  // 1) cache hit → nol CPU
+  const cache = ogCache();
+  if (cache) {
+    try {
+      const hit = await cache.match(req.url);
+      if (hit) return hit;
+    } catch {
+      /* cache gagal → lanjut render biasa */
+    }
+  }
+
   const { searchParams } = new URL(req.url);
   const k = searchParams.get("k");
   const flex = searchParams.get("flex"); // kartu flex pengirim (share story)
@@ -50,7 +78,7 @@ export async function GET(req: Request) {
     }
   }
 
-  return new ImageResponse(
+  const rendered = new ImageResponse(
     (
       <div
         style={{
@@ -194,4 +222,23 @@ export async function GET(req: Request) {
     ),
     { width: 1200, height: 630 }
   );
+
+  // 2) isi longgar buat crawler (isi kartu tak berubah: toName & type statis)
+  const out = new Response(rendered.body, {
+    status: rendered.status,
+    headers: {
+      ...Object.fromEntries(rendered.headers),
+      "Cache-Control": "public, max-age=86400",
+    },
+  });
+
+  // 3) simpan ke Cache-API PoP — request berikutnya nol CPU
+  if (cache) {
+    try {
+      await cache.put(req.url, out.clone());
+    } catch {
+      /* gagal simpan → tetap balas request ini */
+    }
+  }
+  return out;
 }
