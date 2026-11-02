@@ -93,11 +93,19 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    // Dua lapis anti-cache Hyperdrive (read-after-write PATCH/DELETE):
+    //   1. dbNonce() kini memuat nama fungsi volatile `random()` di komentarnya
+    //      → matcher teks Hyperdrive menandai query uncacheable (docs resmi).
+    //   2. Literal unik di SELECT list (pola terverifikasi produksi di
+    //      /api/kado/[id]/reply — komentar bisa dicoret normalisasi cache-key,
+    //      param diabaikan, tapi LITERAL selalu masuk cache key).
     const nonce = dbNonce();
+    const nc = nonce.replace(/[^a-zA-Z0-9-]/g, "");
     const listQ = () =>
       getPgPool().query<EntryRow>(
         `/* ${nonce} */
-         select id, message, rating, category, contact, path, status, created_at
+         select 'nc-${nc}' as nonce_guard,
+                id, message, rating, category, contact, path, status, created_at
          from feedback
          order by created_at desc
          limit 150`

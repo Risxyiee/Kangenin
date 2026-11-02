@@ -199,17 +199,29 @@ export function isUniqueViolation(err: unknown): boolean {
 }
 
 /**
- * Nonce anti-cache Hyperdrive untuk $queryRaw. Automatic query caching
- * Hyperdrive berkunci teks query + parameter; komentar nonce membuat teks
- * query unik per panggilan → selalu cache-miss → selalu ke origin.
+ * Nonce anti-cache Hyperdrive untuk bacaan read-after-write.
+ *
+ * PENTING (temuan produksi 2026-11-02): Hyperdrive mengunci cache pada TEKS
+ * query yang dinormalisasi — komentar biasa TIDAK mengubah cache key, jadi
+ * dua query identik dengan komentar beda BERBAGI cache yang sama (docs:
+ * "Comments that contain volatile or uncacheable function names ... can
+ * cause the query to be treated as uncacheable" — docs Cloudflare Hyperdrive,
+ * Query caching → Read-after-write behavior). Karena itu nonce sengaja
+ * MEMUAT nama fungsi volatile `random()` di dalam komentarnya: pencocok
+ * teks Hyperdrive menandai query itu uncacheable → selalu ke origin →
+ * pembaca selalu melihat tulisan terbaru.
+ *
  * WAJIB dipakai pada bacaan yang HARUS melihat tulisan terbaru
  * (read-after-write): open sesudah start, reply sesudah open, redeem
- * sesudah redeem lain (insiden staleness produksi 2026-11-01: open 400
- * "belum dimulai" padahal start sukses — cache memegang startedAt=null
- * sampai TTL ±60 dtk; konfirmasi: endpoint yang sama 200 setelah ±90 dtk).
+ * sesudah redeem lain, daftar admin sesudah aksi moderasi
+ * (insiden staleness produksi 2026-11-01: open 400 "belum dimulai" padahal
+ * start sukses — cache memegang startedAt=null sampai TTL ±60 dtk;
+ * insiden lanjutan 2026-11-02: PATCH status admin masukan sukses tapi GET
+ * langsung masih "baru" selama ±60-70 dtk karena komentar tanpa nama
+ * fungsi ternyata tidak mem-bypass cache).
  */
 export function dbNonce(): string {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)} random()`
 }
 
 /** Sisa waktu minimum agar satu retry masih masuk akal (query timeout 3 dtk + jeda). */
