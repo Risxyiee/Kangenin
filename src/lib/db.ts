@@ -77,11 +77,13 @@ function makePool(connectionString: string | undefined): PgPool {
   const pool = new Pool({
     ...(connectionString ? { connectionString } : {}),
     // ── batas higiene koneksi (lihat komentar arsitektur di atas) ──
-    max: 5, // per isolate; pooling global dilakukan Hyperdrive. 3→5: tes beban
+    max: 8, // per isolate; pooling global dilakukan Hyperdrive. 3→5: tes beban
     // produksi 2026-11-02 (scripts/load_test.py) menangkap 500 burst saat 5
     // user serentak — antrean nunggu client pool melebihi
-    // connectionTimeoutMillis → 500 tanpa kesempatan diulang. 5 memberi ruang
-    // burst kecil, tetap jauh di bawah pagu koneksi Supabase free-tier.
+    // connectionTimeoutMillis → 500 tanpa kesempatan diulang. 5→8: burst test
+    // 2026-11-02 (scripts/burst_test.py) — 30 concurrent /?k= masih 3×500
+    // (withDbRetry kehabisan budget nunggu antrean); 8 + query UNION di
+    // detectKind menekan kontensi. Tetap jauh di bawah pagu koneksi Supabase.
     connectionTimeoutMillis: 5_000, // gagal cepat, jangan biarkan user nunggu lama
     // 4,5 dtk: audit produksi 2026-11-01 (scripts/audit_all_flows.sh) menemukan
     // hampir semua request menggenangi 3 dtk pas — polanya: query PERTAMA pada

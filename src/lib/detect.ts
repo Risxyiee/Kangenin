@@ -26,27 +26,51 @@ export type KadoKind = {
 const inflight = new Map<string, { at: number; p: Promise<KadoKind> }>();
 
 async function detectKindDb(slug: string): Promise<KadoKind> {
-  const [confession, letterSet, gift] = await withDbRetry(() =>
-    Promise.all([
-      db.confession.findUnique({
-        where: { slug },
-        select: { toName: true },
-      }),
-      db.letterSet.findUnique({
-        where: { slug },
-        select: { toName: true, _count: { select: { letters: true } } },
-      }),
-      db.gift.findUnique({
-        where: { slug },
-        select: { toName: true, type: true },
-      }),
-    ])
+  // SATU query UNION (dulu 3 findUnique paralel): hemat slot pool (1 bukan 3)
+  // dan 1 round-trip — jalur /?k= adalah yang terpanas saat link viral.
+  // Burst test 2026-11-02: 30 concurrent /?k= → 3×500 (budget withDbRetry
+  // habis karena kontensi pool); UNION menekan tekanan pool 3× lipat.
+  const rows = await withDbRetry(() =>
+    db.$queryRawUnsafe<
+      Array<{ kind: string; to_name: string | null; letters: number | null; type: string | null }>
+    >(
+      `SELECT * FROM (
+         SELECT 'confession' AS kind, "toName" AS to_name, NULL::integer AS letters, NULL::text AS type
+           FROM "Confession" WHERE "slug" = $1
+         UNION ALL
+         SELECT 'letterSet', "toName",
+                (SELECT COUNT(*)::integer FROM "Letter" WHERE "setId" = "LetterSet"."id"),
+                NULL
+           FROM "LetterSet" WHERE "slug" = $1
+         UNION ALL
+         SELECT 'gift', "toName", NULL, "type"
+           FROM "Gift" WHERE "slug" = $1
+       ) t
+       LIMIT 1`,
+      slug
+    )
   );
-  return { confession, letterSet, gift };
+  const r = rows[0];
+  if (!r) return { confession: null, letterSet: null, gift: null };
+  if (r.kind === "confession") {
+    return { confession: { toName: r.to_name ?? "" }, letterSet: null, gift: null };
+  }
+  if (r.kind === "letterSet") {
+    return {
+      confession: null,
+      letterSet: { toName: r.to_name ?? "", _count: { letters: r.letters ?? 0 } },
+      gift: null,
+    };
+  }
+  return {
+    confession: null,
+    letterSet: null,
+    gift: { toName: r.to_name ?? "", type: r.type ?? "" },
+  };
 }
 
 /**
- * Satu pemanggilan = 3 findUnique paralel (confession / letterSet / gift).
+ * Satu pemanggilan = SATU query UNION (confession/letterSet/gift sekaligus).
  * Dua lapis dedup:
  *   1. cache() React — generateMetadata & Page dalam request yang sama
  *      cuma menyebabkan query SEKALI.
