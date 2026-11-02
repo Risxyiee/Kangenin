@@ -51,6 +51,7 @@ type StatusData = {
   respondedAt?: string | null;
   reply?: string | null;
   repliedAt?: string | null;
+  isPublic?: boolean;
   // khusus letters
   startedAt?: string | null;
   total?: number;
@@ -635,6 +636,31 @@ export default function StatusView({ senderKey }: { senderKey: string }) {
   const [refreshing, setRefreshing] = useState(false);
   const [saved, setSaved] = useState<SavedItem[]>([]);
   const [listOpen, setListOpen] = useState(false);
+  // kontrol Dinding Kangenin — null = belum disentuh, tampilkan nilai server
+  const [wallOn, setWallOn] = useState<boolean | null>(null);
+  const [wallBusy, setWallBusy] = useState(false);
+  const [wallErr, setWallErr] = useState("");
+
+  async function toggleWall() {
+    if (!data || wallBusy) return;
+    const next = !(wallOn ?? !!data.isPublic);
+    setWallOn(next); // optimis — rollback kalau server nolak
+    setWallBusy(true);
+    setWallErr("");
+    try {
+      const res = await fetch(`/api/status/${senderKey}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isPublic: next }),
+      });
+      if (!res.ok) throw new Error("gagal");
+    } catch {
+      setWallOn(!next);
+      setWallErr("Gagal menyimpan — coba lagi ya.");
+    } finally {
+      setWallBusy(false);
+    }
+  }
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -936,6 +962,52 @@ export default function StatusView({ senderKey }: { senderKey: string }) {
                     />
                   )
                 )}
+              </div>
+            </div>
+
+            {/* kontrol Dinding Kangenin — opt-in bisa diubah kapan saja,
+                isi surat TIDAK PERNAH ikut tampil publik */}
+            <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-4 backdrop-blur">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-rose-100">
+                    Tampil di Dinding Kangenin
+                  </p>
+                  <p className="mt-1 text-xs leading-relaxed text-white/50">
+                    Nama &amp; tema suratmu pajang di{" "}
+                    <a
+                      href="/dinding"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-semibold text-rose-300 underline decoration-rose-400/50 underline-offset-2"
+                    >
+                      dinding publik
+                    </a>{" "}
+                    biar orang lain ikut berani — isi surat 100% tetap
+                    rahasia.
+                  </p>
+                  {wallErr && (
+                    <p className="mt-2 text-[11px] font-medium text-amber-300">
+                      {wallErr}
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={wallOn ?? !!data.isPublic}
+                  disabled={wallBusy}
+                  onClick={toggleWall}
+                  className={`relative mt-1 h-7 w-12 shrink-0 rounded-full transition-colors disabled:opacity-60 ${
+                    wallOn ?? !!data.isPublic ? "bg-rose-500" : "bg-white/15"
+                  }`}
+                >
+                  <span
+                    className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-all ${
+                      wallOn ?? !!data.isPublic ? "left-6" : "left-1"
+                    }`}
+                  />
+                </button>
               </div>
             </div>
 
