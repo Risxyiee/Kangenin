@@ -570,7 +570,7 @@ function StepIdentity(props: StepIdentityProps) {
           className={`${inputCls} resize-none`}
         />
         <div className="mt-2">
-          {/* draft otomatis via AI (NVIDIA/OrcaRouter) — hasil tetap bisa diedit */}
+          {/* draft otomatis via AI (NVIDIA bolt) — hasil tetap bisa diedit */}
           <AiAssistButton
             toName={props.targetName}
             fromName={props.isAnonymous ? "" : props.senderName}

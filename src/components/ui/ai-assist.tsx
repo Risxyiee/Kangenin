@@ -10,7 +10,7 @@ import {
 
 /**
  * Tombol "✨ Bantuan AI" — minta draft pesan dari /api/ai/tulis
- * (OrcaRouter GLM flash free di sisi server; key tidak pernah ke browser).
+ * (NVIDIA NIM bolt di sisi server; key tidak pernah ke browser).
  *
  * Reusable untuk form confess & form kado:
  * - `onDraft` menerima teks draft → parent isi ke textarea (tetap bisa diedit).

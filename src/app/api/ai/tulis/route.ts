@@ -5,17 +5,19 @@ import { describeError } from "@/lib/log-error";
 import { reportError } from "@/lib/monitor";
 
 /**
- * POST /api/ai/tulis — draft pesan confess/kado via LLM gratis.
+ * POST /api/ai/tulis — draft pesan confess/kado via NVIDIA NIM (gratis).
  *
- * Rantai provider (yang pertama punya key & sukses yang dipakai):
- *   1. NVIDIA NIM — `nvidia/nemotron-3.5-bolt-e4b` (±1 dtk, non-reasoning)
- *      key: Secret Cloudflare `NVIDIA_API_KEY` (.env.local untuk dev)
- *   2. OrcaRouter — `z-ai/glm-5.3-flash-free` ($0/token)
- *      key: Secret Cloudflare `ORCAROUTER_API_KEY`
+ * Model: `nvidia/nemotron-3.5-bolt-e4b` — teruji tercepat di antara model
+ * gratis NVIDIA (±1 dtk, non-reasoning, jawaban bersih). Model lain di katalog
+ * yang ikut dicoba dan GAGAL syarat latensi (lihat scripts/exp_nvidia*.py):
+ *   - minimaxai/minimax-m3.1-flash & meta/muse-glimmer-30b: reasoning 36-90 dtk,
+ *     content sering kosong karena max_tokens habis di reasoning_content
+ *   - sebagian besar model lain: 404 di endpoint integrate (invoke URL beda)
+ *   - z-ai/glm-5.3-flash: 3 dtk tapi reasoning — bolt tetap lebih enak
  *
- * Dua endpoint OpenAI-compatible, format request/response identik, jadi satu
- * kode untuk dua provider. Key TIDAK PERNAH dikirim ke browser.
- * Kalau semua provider belum diset, balas 503 ramah — UI tetap aman.
+ * Key: Secret Cloudflare `NVIDIA_API_KEY` (.env.local untuk dev lokal).
+ * Key TIDAK PERNAH dikirim ke browser. Kalau key belum diset, balas 503
+ * ramah — UI tetap aman.
  *
  * Anti-spam: 8 draft / 10 menit / IP (limiter durable yang sama dengan form
  * lain). Output dipotong 600 karakter & dibersihkan sebelum diberikan ke
@@ -23,6 +25,8 @@ import { reportError } from "@/lib/monitor";
  * dikirim (lib/moderation), jadi draft AI tidak punya jalur pintas.
  */
 
+const ENDPOINT = "https://integrate.api.nvidia.com/v1/chat/completions";
+const MODEL = "nvidia/nemotron-3.5-bolt-e4b";
 const MAX_OUTPUT = 600; // sama dengan maxLength textarea confess
 const UPSTREAM_TIMEOUT_MS = 18_000; // klien menyerah di 20 dtk — server duluan
 
@@ -47,24 +51,8 @@ function readSecret(name: string): string | undefined {
   return process.env[name] || undefined;
 }
 
-type Provider = { nama: string; endpoint: string; model: string; key?: string };
-
-function providerTersedia(): Provider[] {
-  const daftar: Provider[] = [
-    {
-      nama: "nvidia-bolt",
-      endpoint: "https://integrate.api.nvidia.com/v1/chat/completions",
-      model: "nvidia/nemotron-3.5-bolt-e4b",
-      key: readSecret("NVIDIA_API_KEY"),
-    },
-    {
-      nama: "orca-glm",
-      endpoint: "https://api.orcarouter.ai/v1/chat/completions",
-      model: "z-ai/glm-5.3-flash-free",
-      key: readSecret("ORCAROUTER_API_KEY"),
-    },
-  ];
-  return daftar.filter((p) => Boolean(p.key));
+function nvidiaKey(): string | undefined {
+  return readSecret("NVIDIA_API_KEY");
 }
 
 /* Hasil model kadang dibungkus kutip/mulai dengan "Berikut ...:" — rapikan. */
@@ -85,22 +73,19 @@ function cleanDraft(raw: string): string {
   return s.slice(0, MAX_OUTPUT);
 }
 
-async function panggilProvider(
-  p: Provider,
-  userContent: string
-): Promise<string> {
+async function panggilNvidia(key: string, userContent: string): Promise<string> {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), UPSTREAM_TIMEOUT_MS);
   try {
-    const res = await fetch(p.endpoint, {
+    const res = await fetch(ENDPOINT, {
       method: "POST",
       signal: ac.signal,
       headers: {
-        Authorization: `Bearer ${p.key}`,
+        Authorization: `Bearer ${key}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: p.model,
+        model: MODEL,
         max_tokens: 400,
         temperature: 0.9,
         messages: [
@@ -111,9 +96,7 @@ async function panggilProvider(
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
-      throw new Error(
-        `upstream ${p.nama} HTTP ${res.status}: ${detail.slice(0, 200)}`
-      );
+      throw new Error(`upstream HTTP ${res.status}: ${detail.slice(0, 200)}`);
     }
     const data = (await res.json()) as {
       choices?: { message?: { content?: string } }[];
@@ -134,8 +117,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const providers = providerTersedia();
-  if (providers.length === 0) {
+  const key = nvidiaKey();
+  if (!key) {
     return NextResponse.json(
       { error: "Fitur AI belum diaktifkan di server ini." },
       { status: 503 }
@@ -184,23 +167,15 @@ export async function POST(req: NextRequest) {
     : "";
   const userContent = `${garisPenerima} ${garisJenis}${garisKonteks}\n\nTulis pesannya sekarang.`;
 
-  // coba tiap provider berurutan; yang pertama sukses menang
   let draft = "";
-  const gagal: string[] = [];
-  for (const p of providers) {
-    try {
-      const raw = await panggilProvider(p, userContent);
-      draft = cleanDraft(raw);
-      if (draft) break;
-      gagal.push(`${p.nama}: jawaban kosong`);
-    } catch (err) {
-      gagal.push(`${p.nama}: ${describeError(err)}`);
-    }
+  try {
+    draft = cleanDraft(await panggilNvidia(key, userContent));
+  } catch (err) {
+    console.error("[ai-tulis] NVIDIA gagal:", describeError(err));
+    reportError(err, { route: "POST /api/ai/tulis" });
   }
 
   if (!draft) {
-    console.error("[ai-tulis] semua provider gagal:", gagal.join(" | "));
-    reportError(new Error(gagal.join(" | ")), { route: "POST /api/ai/tulis" });
     return NextResponse.json(
       { error: "AI-nya lagi ngambek. Coba lagi sebentar lagi ya 🙏" },
       { status: 502 }

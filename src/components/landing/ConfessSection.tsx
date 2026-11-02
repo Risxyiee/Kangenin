@@ -719,7 +719,7 @@ export default function ConfessSection() {
                       className="resize-none"
                     />
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      {/* draft otomatis via AI (OrcaRouter) — hasil tetap bisa diedit */}
+                      {/* draft otomatis via AI (NVIDIA bolt) — hasil tetap bisa diedit */}
                       <AiAssistButton
                         toName={toName}
                         fromName={fromName}
