@@ -43,7 +43,11 @@ export const metadata: Metadata = {
       "Confess anonim gratis lewat link, plus kado digital — semua gratis selama masa uji coba. Ditulis kamu, dibuka dia.",
     siteName: "Kangenin",
     type: "website",
-    images: [{ url: "/api/og", width: 1200, height: 630 }],
+    // Aset statis (public/og-generic.png) — dulu /api/og tanpa param dipanggil
+    // crawler di setiap crawl beranda → render satori per request berada di
+    // batas CPU Worker (Error 1102). Kartu generik tak berubah → sekali
+    // pre-render, dilayani edge CDN, nol CPU.
+    images: [{ url: "/og-generic.png", width: 1200, height: 630 }],
   },
   twitter: {
     card: "summary_large_image",

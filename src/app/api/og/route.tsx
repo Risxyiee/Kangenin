@@ -1,5 +1,5 @@
 import { ImageResponse } from "next/og";
-import { db, withDbRetry } from "@/lib/db";
+import { detectKind } from "@/lib/detect";
 import { GIFT_META, type GiftType } from "@/lib/gift-data";
 import { singleFlight } from "@/lib/singleflight";
 
@@ -35,6 +35,17 @@ const ogCache = (): Cache | null => {
 const ogInflight = new Map<string, { at: number; p: Promise<ArrayBuffer> }>();
 
 export async function GET(req: Request) {
+  // 0) kartu generik (tanpa param) → aset statis pre-render, nol CPU:
+  //    layout metadata sudah mengarah ke /og-generic.png; redirect ini cuma
+  //    buat link lama yang masih memanggil /api/og polos
+  const sp = new URL(req.url).searchParams;
+  if (!sp.get("k") && !sp.get("flex") && !sp.get("yes")) {
+    return new Response(null, {
+      status: 302,
+      headers: { Location: "/og-generic.png" },
+    });
+  }
+
   const cache = ogCache();
 
   // 1) fast path — cache hit → nol CPU, tanpa antre
@@ -95,16 +106,8 @@ async function renderOg(url: string): Promise<ArrayBuffer> {
     sub = "Ditulis diam-diam, dikirim cukup lewat link. Kamu kapan?";
   } else if (k) {
     try {
-      const [confession, letterSet, gift] = await withDbRetry(() =>
-        Promise.all([
-          db.confession.findUnique({ where: { slug: k }, select: { toName: true } }),
-          db.letterSet.findUnique({
-            where: { slug: k },
-            select: { toName: true, _count: { select: { letters: true } } },
-          }),
-          db.gift.findUnique({ where: { slug: k }, select: { toName: true, type: true } }),
-        ])
-      );
+      // detectKind: single-flight — burst crawler URL sama cukup 1 rangkaian query
+      const { confession, letterSet, gift } = await detectKind(k);
       if (confession) {
         heading = `Ada surat rahasia buat ${confession.toName}`;
         sub = "Buka sekarang — siapa tahu dia juga punya perasaan yang sama";
@@ -134,14 +137,14 @@ async function renderOg(url: string): Promise<ArrayBuffer> {
           position: "relative",
         }}
       >
-        {/* glow dekoratif */}
+        {/* glow dekoratif — skala 2/3 dari desain 1200px (hemat CPU encode PNG) */}
         <div
           style={{
             position: "absolute",
-            top: -140,
-            left: -100,
-            width: 500,
-            height: 500,
+            top: -93,
+            left: -67,
+            width: 333,
+            height: 333,
             borderRadius: 9999,
             background: "rgba(244,63,94,0.22)",
           }}
@@ -149,10 +152,10 @@ async function renderOg(url: string): Promise<ArrayBuffer> {
         <div
           style={{
             position: "absolute",
-            bottom: -160,
-            right: -80,
-            width: 520,
-            height: 520,
+            bottom: -107,
+            right: -53,
+            width: 347,
+            height: 347,
             borderRadius: 9999,
             background: "rgba(236,72,153,0.16)",
           }}
@@ -162,8 +165,8 @@ async function renderOg(url: string): Promise<ArrayBuffer> {
         <div
           style={{
             display: "flex",
-            width: 108,
-            height: 108,
+            width: 72,
+            height: 72,
             borderRadius: 9999,
             background: "linear-gradient(135deg, #f43f5e, #be123c)",
             alignItems: "center",
@@ -171,12 +174,12 @@ async function renderOg(url: string): Promise<ArrayBuffer> {
             boxShadow: "0 20px 60px rgba(244,63,94,0.45)",
           }}
         >
-          <div style={{ position: "relative", width: 44, height: 40, display: "flex" }}>
+          <div style={{ position: "relative", width: 29, height: 27, display: "flex" }}>
             <div
               style={{
                 position: "absolute",
-                width: 22,
-                height: 22,
+                width: 15,
+                height: 15,
                 borderRadius: 9999,
                 background: "#ffffff",
                 left: 0,
@@ -186,8 +189,8 @@ async function renderOg(url: string): Promise<ArrayBuffer> {
             <div
               style={{
                 position: "absolute",
-                width: 22,
-                height: 22,
+                width: 15,
+                height: 15,
                 borderRadius: 9999,
                 background: "#ffffff",
                 right: 0,
@@ -197,12 +200,12 @@ async function renderOg(url: string): Promise<ArrayBuffer> {
             <div
               style={{
                 position: "absolute",
-                width: 26,
-                height: 26,
+                width: 17,
+                height: 17,
                 background: "#ffffff",
                 transform: "rotate(45deg)",
-                left: 9,
-                top: 11,
+                left: 6,
+                top: 7,
               }}
             />
           </div>
@@ -210,12 +213,12 @@ async function renderOg(url: string): Promise<ArrayBuffer> {
 
         <div
           style={{
-            marginTop: 42,
-            fontSize: 64,
+            marginTop: 28,
+            fontSize: 43,
             fontWeight: 800,
             color: "#ffffff",
             letterSpacing: -1,
-            maxWidth: 1000,
+            maxWidth: 667,
             textAlign: "center",
             display: "flex",
           }}
@@ -224,10 +227,10 @@ async function renderOg(url: string): Promise<ArrayBuffer> {
         </div>
         <div
           style={{
-            marginTop: 18,
-            fontSize: 30,
+            marginTop: 12,
+            fontSize: 20,
             color: "rgba(255,255,255,0.72)",
-            maxWidth: 860,
+            maxWidth: 573,
             textAlign: "center",
             display: "flex",
           }}
@@ -238,31 +241,33 @@ async function renderOg(url: string): Promise<ArrayBuffer> {
         <div
           style={{
             position: "absolute",
-            bottom: 44,
+            bottom: 29,
             display: "flex",
             alignItems: "center",
           }}
         >
           <div
             style={{
-              width: 18,
-              height: 18,
+              width: 12,
+              height: 12,
               borderRadius: 9999,
               background: "#f43f5e",
-              marginRight: 12,
+              marginRight: 8,
               display: "flex",
             }}
           />
-          <div style={{ fontSize: 28, fontWeight: 700, color: "#ffffff", display: "flex" }}>
+          <div style={{ fontSize: 19, fontWeight: 700, color: "#ffffff", display: "flex" }}>
             kangen
           </div>
-          <div style={{ fontSize: 28, fontWeight: 700, color: "#f43f5e", display: "flex" }}>
+          <div style={{ fontSize: 19, fontWeight: 700, color: "#f43f5e", display: "flex" }}>
             .in
           </div>
         </div>
       </div>
     ),
-    { width: 1200, height: 630 }
+    // 800×419 = rasio OG 1.91:1 tetap; 44% pixel lebih sedikit dari 1200×630
+    // → encode resvg jauh lebih ringan di budget CPU 10ms (Error 1102)
+    { width: 800, height: 419 }
   );
 
   const bytes = await rendered.arrayBuffer();

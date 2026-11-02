@@ -7,6 +7,7 @@ import { makeSlug, makeToken } from "@/lib/token";
 import { describeError } from "@/lib/log-error";
 import { THEME_KEYS, THEME_INVALID_MESSAGE, isThemeSelectable } from "@/lib/themes";
 import { reportError } from "@/lib/monitor";
+import { scheduleOgWarm } from "@/lib/og-warm";
 
 const confessSchema = z.object({
   fromName: z.string().trim().max(40).optional().default(""),
@@ -129,6 +130,11 @@ export async function POST(req: NextRequest) {
       }
       throw new Error("gagal membuat slug unik setelah 5 percobaan");
     });
+
+    // panaskan kartu OG personal sejak sekarang (waitUntil — gak menunda
+    // respons): saat link di-share, crawler WA dkk langsung dapat cache,
+    // gak jadi korban Error 1102 di jalur render satori
+    scheduleOgWarm(new URL(req.url).origin, confession.slug);
 
     return NextResponse.json(
       { slug: confession.slug, id: confession.id, senderKey },
