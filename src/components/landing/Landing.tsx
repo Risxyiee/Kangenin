@@ -28,6 +28,17 @@ export default function Landing() {
         <Faq />
         <FooterCta />
       </main>
+
+      {/* Pintu masukan user — selalu ada di pojok, biar kritik & saran cuma
+          sekali ketuk dari mana pun di beranda (dilacak asalnya via ?dari=). */}
+      <a
+        href="/masukan?dari=beranda"
+        aria-label="Kasih kritik dan saran"
+        className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-full border border-border bg-card/95 px-4 py-2.5 text-sm font-semibold text-foreground shadow-lg backdrop-blur transition-transform hover:scale-105"
+      >
+        <span aria-hidden="true">💬</span>
+        Kasih saran
+      </a>
     </div>
   );
 }

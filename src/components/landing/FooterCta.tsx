@@ -61,6 +61,9 @@ export default function FooterCta() {
             <a href="/privasi" className="transition-colors hover:text-foreground">
               Privasi
             </a>
+            <a href="/masukan" className="transition-colors hover:text-foreground">
+              Kritik &amp; Saran
+            </a>
           </div>
           <p className="text-xs">© 2026 Kangenin</p>
         </div>

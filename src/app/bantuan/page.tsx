@@ -90,11 +90,11 @@ export default function BantuanPage() {
         <Link href="/tentang" className="text-primary underline underline-offset-2">
           halaman Tentang
         </Link>{" "}
-        — atau langsung coba sendiri,{" "}
-        <Link href="/#confess" className="text-primary underline underline-offset-2">
-          gratis kok
+        — atau{" "}
+        <Link href="/masukan" className="text-primary underline underline-offset-2">
+          kirim kritik &amp; saranmu
         </Link>
-        .
+        , dibaca langsung sama yang bikin.
       </p>
     </main>
   );
