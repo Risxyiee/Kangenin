@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Verifikasi produksi fitur AI Kangenin (post-deploy 5d8be77).
-Route tanpa key harus 503 ramah; UI harus memuat tombol Bantuan AI."""
+"""Verifikasi produksi fitur AI Kangenin (setelah NVIDIA_API_KEY diset).
+Ekspektasi: /api/ai/tulis hidup (200 + draft), validasi 400, UI tampil."""
 import sys, urllib.request
 
 BASE = "https://kangenin.risyxieee123.workers.dev"
@@ -11,7 +11,7 @@ def cek(nama, kondisi, detail=""):
     hasil.append((nama, bool(kondisi), detail))
 
 
-def req(path, data=None, headers=None, timeout=30):
+def req(path, data=None, headers=None, timeout=40):
     h = {"User-Agent": "verify-ai/1.0"}
     if headers:
         h.update(headers)
@@ -23,27 +23,40 @@ def req(path, data=None, headers=None, timeout=30):
         return e.code, e.read().decode("utf-8", "replace")
 
 
-# 1) POST /api/ai/tulis tanpa key → 503 JSON ramah (bukan 500/HTML)
-s, b = req("/api/ai/tulis", data=b'{"toName":"Nadia"}',
+# 1) draft confess valid → 200 + pesan
+s, b = req("/api/ai/tulis", data=b'{"toName":"Nadia","jenis":"confess"}',
            headers={"Content-Type": "application/json"})
-cek("tulis tanpa key = 503 ramah", s == 503 and "Fitur AI" in b, f"HTTP {s}: {b[:80]}")
+draft = ""
+if s == 200:
+    try:
+        draft = __import__("json").loads(b).get("message", "")
+    except Exception:  # noqa: BLE001
+        pass
+cek("tulis valid = 200 + draft", s == 200 and 10 < len(draft) <= 600,
+    f"HTTP {s}: {draft[:90]}")
 
-# 2) POST /api/ai/tulis body rusak → 503 dulu (cek key sebelum parse body)
+# 2) tanpa toName → 400
+s, b = req("/api/ai/tulis", data=b"{}",
+           headers={"Content-Type": "application/json"})
+cek("tulis tanpa toName = 400", s == 400, f"HTTP {s}: {b[:60]}")
+
+# 3) body rusak → 400
 s, b = req("/api/ai/tulis", data=b"bukan-json",
            headers={"Content-Type": "application/json"})
-cek("tulis body rusak = 503 (key dicek lebih dulu)", s == 503, f"HTTP {s}")
+cek("tulis body rusak = 400", s == 400, f"HTTP {s}")
 
-# 3) Landing memuat tombol Bantuan AI di form confess
+# 4) jenis kado → 200
+s, b = req("/api/ai/tulis", data=b'{"toName":"Budi","jenis":"kado"}',
+           headers={"Content-Type": "application/json"})
+cek("tulis jenis kado = 200", s == 200, f"HTTP {s}")
+
+# 5) UI tombol Bantuan AI di landing & create
 s, b = req("/")
-cek("landing 200", s == 200, f"HTTP {s}")
-cek("landing ada tombol Bantuan AI", "Bantuan AI" in b)
-
-# 4) Halaman /create memuat tombol Bantuan AI (form kado)
+cek("landing 200 + tombol AI", s == 200 and "Bantuan AI" in b, f"HTTP {s}")
 s, b = req("/create")
-cek("create 200", s == 200, f"HTTP {s}")
-cek("create ada tombol Bantuan AI", "Bantuan AI" in b)
+cek("create 200 + tombol AI", s == 200 and "Bantuan AI" in b, f"HTTP {s}")
 
-# 5) Halaman penting lain tetap hidup
+# 6) halaman penting lain tetap hidup
 for p in ("/dinding", "/bantuan"):
     s, _ = req(p)
     cek(f"{p} 200", s == 200, f"HTTP {s}")
