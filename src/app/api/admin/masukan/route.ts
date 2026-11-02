@@ -61,9 +61,11 @@ function ensureFeedbackAdmin(): Promise<void> {
 
 function isMissingTable(err: unknown): boolean {
   const code = (err as { code?: string })?.code;
-  if (code === "42P01") return true;
+  // 42P01 = tabel belum ada; 42703 = tabel ada tapi kolom `status` belum
+  // (dibuat route publik lama sebelum kolom admin ini dirilis).
+  if (code === "42P01" || code === "42703") return true;
   const msg = err instanceof Error ? err.message : String(err);
-  return /42P01|relation "feedback" does not exist/i.test(msg);
+  return /42P01|42703|relation "feedback" does not exist|column .* does not exist/i.test(msg);
 }
 
 type EntryRow = {
@@ -101,15 +103,22 @@ export async function GET(req: NextRequest) {
          limit 150`
       );
 
+    // SELALU pastikan tabel + kolom status ada dulu (idempoten, sekali per
+    // isolate) — tabel lama dari route publik tidak punya kolom `status`, dan
+    // tanpa ini SELECT-nya 42703 → 500 (insiden produksi 2026-11-02).
+    await ensureFeedbackAdmin();
+
     let rows: EntryRow[];
     try {
       const res = await withDbRetry(listQ);
       rows = res.rows;
     } catch (err) {
       if (!isMissingTable(err)) throw err;
-      // tabel belum pernah dibuat (belum ada masukan) → pastikan ada, jawab kosong
+      // skema berubah di bawah kaki isolate ini → pastikan ulang, coba sekali
+      ensurePromise = null;
       await ensureFeedbackAdmin();
-      rows = [];
+      const res = await withDbRetry(listQ);
+      rows = res.rows;
     }
 
     const stats = { total: rows.length, baru: 0, dibaca: 0, selesai: 0 };
