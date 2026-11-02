@@ -16,6 +16,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { motion, useReducedMotion } from "framer-motion"
 import {
   ArrowLeft,
@@ -31,6 +32,7 @@ import {
   Lock,
   MessageCircle,
   QrCode,
+  Trash2,
   type LucideIcon,
 } from "lucide-react"
 import { QRCodeSVG } from "qrcode.react"
@@ -43,6 +45,8 @@ interface ShareDashboardProps {
   kadoId: string
   targetName: string
   kadoType: string
+  /** "pending" | "opened" | "accepted" | "rejected" — dipakai kartu hapus. */
+  kadoStatus: string
   /** URL lengkap hasil hitung server — dipakai sebelum client mount. */
   initialUrl: string
   isAnonymous: boolean
@@ -315,6 +319,14 @@ export default function ShareDashboard(props: ShareDashboardProps) {
           <Card delay={0.14} reduceMotion={reduceMotion ?? false}>
             <WaBotCard waNumber={waNumber} onWaNumber={setWaNumber} />
           </Card>
+
+          <Card delay={0.21} reduceMotion={reduceMotion ?? false}>
+            <DangerZoneCard
+              kadoId={props.kadoId}
+              targetName={props.targetName}
+              kadoStatus={props.kadoStatus}
+            />
+          </Card>
         </div>
 
         <p className="mt-6 text-center text-xs text-zinc-600">
@@ -497,6 +509,101 @@ function ReplyCard({
         </a>
       )}
     </motion.section>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 4. Zona Hapus — kado hilang permanen, link mati total
+// ─────────────────────────────────────────────────────────────────────────────
+
+function DangerZoneCard({
+  kadoId,
+  targetName,
+  kadoStatus,
+}: {
+  kadoId: string
+  targetName: string
+  kadoStatus: string
+}) {
+  const router = useRouter()
+  const [deleting, setDeleting] = useState(false)
+  const [deleted, setDeleted] = useState(false)
+  const [error, setError] = useState("")
+
+  async function handleDelete() {
+    const sudahDibuka = kadoStatus && kadoStatus !== "pending"
+    const ok = window.confirm(
+      sudahDibuka
+        ? `Kadonya udah dibuka${kadoStatus === "accepted" || kadoStatus === "rejected" ? " & dijawab" : ""}. Tetap hapus permanen kado untuk ${targetName}? Link-nya mati total dan nggak bisa dikembalikan.`
+        : `Hapus permanen kado untuk ${targetName}? Link-nya mati total dan nggak bisa dikembalikan.`
+    )
+    if (!ok) return
+    setDeleting(true)
+    setError("")
+    try {
+      const res = await fetch(`/api/kado/${kadoId}`, { method: "DELETE" })
+      // 404 = kadonya memang sudah tidak ada → anggap berhasil (idempoten),
+      // jangan biarkan user kedua kalau tekan hapus kena error aneh.
+      if (res.ok || res.status === 404) {
+        setDeleted(true)
+        setTimeout(() => router.replace("/create"), 1600)
+      } else {
+        const json = (await res.json().catch(() => null)) as { error?: string } | null
+        setError(json?.error ?? "Gagal menghapus — coba lagi ya.")
+      }
+    } catch {
+      setError("Koneksi bermasalah — coba lagi ya.")
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  if (deleted) {
+    return (
+      <div className="py-2 text-center">
+        <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-400/30 bg-emerald-500/15 text-emerald-300">
+          <Check className="h-4.5 w-4.5" strokeWidth={2} />
+        </div>
+        <p className="mt-3 text-sm font-semibold text-white">Kadonya udah dihapus.</p>
+        <p className="mt-1 text-xs leading-relaxed text-zinc-500">
+          Link-nya mati total — dibawa balik ke Studio…
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <CardHeader
+        icon={Trash2}
+        tone="rose"
+        title="Hapus Kado"
+        desc="Menyesal atau salah kirim? Hapus permanen — link-nya langsung mati, isi kadonya hilang dari database."
+      />
+      <button
+        type="button"
+        onClick={() => void handleDelete()}
+        disabled={deleting}
+        className="flex w-full items-center justify-center gap-2 rounded-2xl border border-rose-400/40 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-200 transition-colors hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {deleting ? (
+          <>
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Menghapus…
+          </>
+        ) : (
+          <>
+            <Trash2 className="h-4 w-4" />
+            Hapus kado ini permanen
+          </>
+        )}
+      </button>
+      {error && (
+        <p role="alert" className="mt-2 text-xs text-rose-300">
+          {error}
+        </p>
+      )}
+    </div>
   )
 }
 

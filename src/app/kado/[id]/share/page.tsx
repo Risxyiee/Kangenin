@@ -129,6 +129,7 @@ export default async function SharePage({ params }: SharePageProps) {
     id: string
     targetName: string
     kadoType: string
+    status: string
     senderName: string | null
     fomoInitials: string | null
   } | null = null
@@ -143,6 +144,9 @@ export default async function SharePage({ params }: SharePageProps) {
           id: true,
           targetName: true,
           kadoType: true,
+          // status dipakai kartu hapus: teks peringatan berbeda kalau kado
+          // sudah dibuka / dijawab penerima
+          status: true,
           senderName: true,
           fomoInitials: true,
         },
@@ -176,6 +180,7 @@ export default async function SharePage({ params }: SharePageProps) {
       kadoId={kado.id}
       targetName={kado.targetName}
       kadoType={kado.kadoType}
+      kadoStatus={kado.status}
       initialUrl={initialUrl}
       // senderName boleh tampil di dashboard pengirim (dia pemiliknya) —
       // target tetap hanya melihat fomoInitials.
