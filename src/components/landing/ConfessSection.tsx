@@ -16,6 +16,7 @@ import {
 import ConfessionView, { CONFESS_THEMES } from "@/components/confess/ConfessionView";
 import { LS_KEYS, lsGet, lsSet } from "@/lib/local-store";
 import { FETCH_TIMEOUT_MESSAGE, fetchWithTimeout, isTimeoutError } from "@/lib/fetch-timeout";
+import { AiAssistButton } from "@/components/ui/ai-assist";
 
 /* alur demo = CERMIN PERSIS alur asli PremiumConfess (Heartstring Edition):
    segel lilin → tahan detak (3 reward) → hati retak → surat baris demi baris
@@ -717,10 +718,25 @@ export default function ConfessSection() {
                       rows={4}
                       className="resize-none"
                     />
-                    <p className="text-right text-xs text-muted-foreground">
-                      {message.length}/600 · draft tersimpan otomatis di
-                      perangkatmu
-                    </p>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      {/* draft otomatis via AI (OrcaRouter) — hasil tetap bisa diedit */}
+                      <AiAssistButton
+                        toName={toName}
+                        fromName={fromName}
+                        jenis="confess"
+                        onDraft={(draft) => setMessage(draft)}
+                        blockedReason={
+                          toName.trim().length === 0
+                            ? "Isi nama dia dulu biar AI tahu buat siapa ✍️"
+                            : null
+                        }
+                        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-primary/40 bg-background px-3 text-xs font-medium text-primary transition hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+                      />
+                      <p className="text-right text-xs text-muted-foreground">
+                        {message.length}/600 · draft tersimpan otomatis di
+                        perangkatmu
+                      </p>
+                    </div>
                   </div>
 
                   <div className="space-y-2">
