@@ -77,10 +77,11 @@ function makePool(connectionString: string | undefined): PgPool {
   const pool = new Pool({
     ...(connectionString ? { connectionString } : {}),
     // ── batas higiene koneksi (lihat komentar arsitektur di atas) ──
-    max: 3, // per isolate; pooling global dilakukan Hyperdrive. 5→3: kurangi
-    // jumlah koneksi origin Supabase (free tier max_connections terbatas) —
-    // request app mayoritas sekuensial, 3 jelas cukup, dan makin sedikit
-    // koneksi terbuka makin sedikit koneksi basi yang bisa dijadwalkan user.
+    max: 5, // per isolate; pooling global dilakukan Hyperdrive. 3→5: tes beban
+    // produksi 2026-11-02 (scripts/load_test.py) menangkap 500 burst saat 5
+    // user serentak — antrean nunggu client pool melebihi
+    // connectionTimeoutMillis → 500 tanpa kesempatan diulang. 5 memberi ruang
+    // burst kecil, tetap jauh di bawah pagu koneksi Supabase free-tier.
     connectionTimeoutMillis: 5_000, // gagal cepat, jangan biarkan user nunggu lama
     // 4,5 dtk: audit produksi 2026-11-01 (scripts/audit_all_flows.sh) menemukan
     // hampir semua request menggenangi 3 dtk pas — polanya: query PERTAMA pada
@@ -176,11 +177,16 @@ if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = db
 //      menggantung DIPOTONG tepat saat anggaran habis, jadi total waktu blok
 //      DB DIJAMIN ≤ budgetMs + jeda, apa pun yang terjadi di bawahnya. Query
 //      yang tertinggal tetap diawasi query_timeout (3 dtk) — klien basi
-//      dibunuh lalu dibuang pool; tidak menumpuk di max=3.
+//      dibunuh lalu dibuang pool; tidak menumpuk di max=5.
 // Peluang ketiga attempt semuanya kena zombie sangat kecil; kalau anggaran
 // habis, error naik cepat dengan pesan rapi + tombol coba lagi — BUKAN
 // 18–24 dtk hening seperti episode lama.
-const RETRYABLE = /query read timeout|connection terminated|timeout exceeded|ECONNRESET|socket hang up|anggaran db/i
+const RETRYABLE = /query read timeout|connection terminated|timeout exceeded|took longer than|statement timeout|ECONNRESET|socket hang up|anggaran db/i
+// "took longer than"      = antre nunggu client pool (connectionTimeoutMillis)
+// "statement timeout"     = server memotong query nangkring (57014) — koneksi
+//                           SEHAT, cuma kecepetan potongnya → wajib diulang
+//                           (tes beban 2026-11-02: 14/18 wall request gagal
+//                           padahal satu-satunya dosa adalah burst kecil)
 
 /**
  * Deteksi tabrakan unique constraint (P2002) — antar varian error adapter
