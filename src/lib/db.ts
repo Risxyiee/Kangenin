@@ -98,7 +98,16 @@ function makePool(connectionString: string | undefined): PgPool {
     // request (12 dari 25 panggilan audit > 3 dtk). 4,5 dtk menyerap dial
     // dingin (tipikal 2–3 dtk) tanpa retry; koneksi basi tetap dipotong, dan
     // anggaran keras withDbRetry (8,5 dtk) tetap membatasi worst-case user.
-    query_timeout: 4_500,
+    // (CERITA LAMA — dial kini kerap 2–6 dtk; lihat catatan 4,5→6 dtk di bawah.)
+    query_timeout: 6_000,
+    // 4,5→6 dtk (audit pralaunch 2026-11-03): pasca-deploy, GET /api/wall
+    // berurutan memperlihatkan pola 159 msk → 4,9 dtk → 9,5 dtk = kelipatan
+    // 4,5 dtk + jeda retry. Artinya dial dingin Hyperdrive→origin (kini tipikal
+    // 2–6 dtk) kerap TERPOTONG di 4,5 dtk — klien dihancurkan, dial dibayar
+    // lagi dari nol di attempt berikutnya (koneksi origin Hyperdrive yang
+    // ternyata sudah selesai dibuat ikut terbuang). 6 dtk membiarkan dial
+    // sehat selesai sekali jalan; pemotongan zombie tetap dijaga lapis
+    // statement_timeout 8 dtk (server) + anggaran keras withDbRetry 12 dtk.
     statement_timeout: 8_000, // server-side: potong query nangkring
     // PENTING: di node-postgres, 0 = DISABLED. Semula 1 dtk (anti-zombie
     // episode 2026-11-01) — tapi itu mematikan koneksi SEHAT juga: hampir
