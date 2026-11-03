@@ -1,7 +1,15 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "kangenin",
-  "main": ".open-next/worker.js",
+  // S-06: main memakai wrapper (worker-entry.js) — fetch sama persis dengan
+  // worker OpenNext, plus handler `scheduled` untuk cron warmer di bawah.
+  "main": "./worker-entry.js",
+
+  // S-06 anti isolate dingin: ping internal /api/stats tiap menit supaya pool
+  // Hyperdrive → Supabase hangat. Logika ada di worker-entry.js → scheduled().
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
   "compatibility_date": "2025-10-01",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": {
