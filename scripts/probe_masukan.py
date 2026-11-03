@@ -7,12 +7,13 @@ probe_masukan.py — karakterisasi baca-tulis modul masukan di produksi:
 Semua langkah mencetak status HTTP eksplisit — tidak ada asumsi senyap.
 """
 
+import os
 import time
 
 import requests
 
 BASE = "https://kangenin.risyxieee123.workers.dev"
-H = {"x-admin-key": "kangenin-admin-2026"}
+H = {"x-admin-key": os.environ.get("ADMIN_KEY", "")}  # set env ADMIN_KEY dulu — kunci bawaan lama sudah dihapus (fail-closed)
 
 msg = f"Probe visibilitas masukan pukul {time.strftime('%H:%M:%S')} — mohon abaikan."
 

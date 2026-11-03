@@ -13,13 +13,14 @@ Yang diuji (semua aksi tulis dibalikin ke kondisi awal):
 """
 
 import json
+import os
 import sys
 import time
 
 import requests
 
 BASE = "https://kangenin.risyxieee123.workers.dev"
-KEY = "kangenin-admin-2026"
+KEY = os.environ.get("ADMIN_KEY", "")  # set env ADMIN_KEY dulu — kunci bawaan lama sudah dihapus (fail-closed)
 H = {"x-admin-key": KEY}
 
 PASS, FAIL = [], []

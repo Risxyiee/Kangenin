@@ -13,12 +13,13 @@ Catatan: POST dibatasi 5/30 menit/IP — jalankan maksimal 2x dalam setengah
 jam, kalau kena 429 berarti jeda dulu.
 """
 import json
+import os
 import time
 import urllib.request
 import urllib.error
 
 BASE = "https://kangenin.risyxieee123.workers.dev"
-KEY = "kangenin-insight-2026"  # harus sama dgn bawaan INSIGHT_KEY di route
+KEY = os.environ.get("INSIGHT_KEY", "")  # set env INSIGHT_KEY dulu — kunci bawaan lama sudah dihapus (fail-closed)
 MARKER = "Uji otomatis kritik&saran #K7 — abaikan ya 🤖"
 UA = ("Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36")

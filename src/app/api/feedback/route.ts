@@ -94,10 +94,17 @@ function isMissingTable(err: unknown): boolean {
 }
 
 // ── Kunci baca (halaman /insight) ───────────────────────────────────────────
-// Urutan resolusi: binding/secret INSIGHT_KEY di Cloudflare → process.env →
-// bawaan. Ganti lewat Cloudflare dashboard (Settings → Variables) kalau mau
-// lebih ketat — kode tidak perlu diubah.
-function insightKey(): string {
+// Resolusi: binding/secret INSIGHT_KEY di Cloudflare → process.env (dev
+// lokal). Ganti lewat Cloudflare dashboard (Settings → Variables) — kode
+// tidak perlu diubah.
+//
+// FAIL-CLOSED (bersih-bersih pra-launch 2026-11-03): dulu ada bawaan
+// "kangenin-insight-2026" yang tertulis di kode — repo ini publik, jadi
+// kuncinya bisa dibaca siapa pun. Bawaan itu DIHAPUS: kalau INSIGHT_KEY
+// tidak terpasang, baca masukan MENOLAK (404) — bukan membuka pintu pakai
+// kunci yang sudah dikenal publik. Owner sudah memasang INSIGHT_KEY sendiri
+// sebagai secret Worker.
+function insightKey(): string | undefined {
   try {
     const { env } = getCloudflareContext() as unknown as {
       env?: { INSIGHT_KEY?: string }
@@ -106,7 +113,7 @@ function insightKey(): string {
   } catch {
     // bukan runtime Cloudflare (dev lokal) → lanjut ke process.env
   }
-  return process.env.INSIGHT_KEY ?? "kangenin-insight-2026"
+  return process.env.INSIGHT_KEY?.trim() || undefined
 }
 
 export async function POST(req: NextRequest) {
@@ -198,9 +205,11 @@ type EntryRow = {
 
 export async function GET(req: NextRequest) {
   try {
-    // key salah → 404 (bukan 403) — jangan sempurnakan peta buat pengintip
+    // key salah → 404 (bukan 403) — jangan sempurnakan peta buat pengintip.
+    // FAIL-CLOSED: INSIGHT_KEY tidak terpasang → juga 404, bukan buka pintu.
+    const expected = insightKey();
     const key = req.nextUrl.searchParams.get("key") ?? "";
-    if (key !== insightKey()) {
+    if (!expected || key !== expected) {
       return NextResponse.json({ error: "nggak ada apa-apa di sini" }, { status: 404 });
     }
 
