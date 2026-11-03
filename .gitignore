@@ -74,3 +74,10 @@ test-results/
 
 # Proyek template terpisah di dalam sandbox — BUKAN bagian repo Kangenin
 sayangin/
+
+# Endpoint debug lokal (sisa audit) — hidup hanya di sandbox, JANGAN ikut build produksi
+src/app/api/db-ping/
+src/app/api/debug-db/
+
+# Artefak prisma migrate di sandbox — dialek SQLite (DATETIME), bukan skema Supabase
+prisma/migrations/
