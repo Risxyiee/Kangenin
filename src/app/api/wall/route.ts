@@ -24,43 +24,60 @@ export const runtime = "nodejs";
  */
 let lastGoodWall: string | null = null;
 
-export async function GET(req: NextRequest) {
-  try {
-    const limitRaw = Number(req.nextUrl.searchParams.get("limit") ?? 48);
-    const limit = Math.min(Math.max(limitRaw, 1), 96);
+// S-07 single-flight per nilai limit: request paralel ber-limit sama menunggu
+// SATU query bersama. Tanpa ini, burst di isolate dingin membuat belasan query
+// serentak merebut pool (maks 12) — pengantri menghabiskan anggaran retry
+// 15 dtk (tercatat: 1 request wall 15,1 dtk di burst pasca-deploy S-07).
+const wallInflight = new Map<number, Promise<string>>();
 
-    const rows = await withDbRetry(() =>
-      db.confession.findMany({
-        where: { isPublic: true, reportCount: { lt: 3 } },
-        orderBy: { createdAt: "desc" },
-        take: limit,
-        select: {
-          id: true,
-          fromName: true,
-          toName: true,
-          theme: true,
-          createdAt: true,
-          response: true,
-          reactions: {
-            select: { heart: true, laugh: true, cry: true, bloom: true },
-          },
+async function muatWall(limit: number): Promise<string> {
+  const rows = await withDbRetry(() =>
+    db.confession.findMany({
+      where: { isPublic: true, reportCount: { lt: 3 } },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      select: {
+        id: true,
+        fromName: true,
+        toName: true,
+        theme: true,
+        createdAt: true,
+        response: true,
+        reactions: {
+          select: { heart: true, laugh: true, cry: true, bloom: true },
         },
-      })
-    );
+      },
+    })
+  );
+  lastGoodWall = JSON.stringify({
+    items: rows.map((r) => ({
+      id: r.id,
+      from: r.fromName.trim() || "Seseorang",
+      to: r.toName,
+      theme: r.theme,
+      createdAt: r.createdAt.toISOString(),
+      answered: r.response !== null && r.response !== undefined,
+      reactions: r.reactions ?? { heart: 0, laugh: 0, cry: 0, bloom: 0 },
+    })),
+  });
+  return lastGoodWall;
+}
 
-    const payload = JSON.stringify({
-      items: rows.map((r) => ({
-        id: r.id,
-        from: r.fromName.trim() || "Seseorang",
-        to: r.toName,
-        theme: r.theme,
-        createdAt: r.createdAt.toISOString(),
-        answered: r.response !== null && r.response !== undefined,
-        reactions: r.reactions ?? { heart: 0, laugh: 0, cry: 0, bloom: 0 },
-      })),
+export async function GET(req: NextRequest) {
+  const limitRaw = Number(req.nextUrl.searchParams.get("limit") ?? 48);
+  const limit = Math.min(Math.max(limitRaw, 1), 96);
+
+  // single-flight: gabungkan cache-miss paralel ber-limit sama jadi satu query
+  let berjalan = wallInflight.get(limit);
+  if (!berjalan) {
+    berjalan = muatWall(limit).finally(() => {
+      wallInflight.delete(limit);
     });
-    lastGoodWall = payload;
+    wallInflight.set(limit, berjalan);
+  }
 
+  try {
+    const payload = await berjalan;
     return new NextResponse(payload, {
       headers: { "Content-Type": "application/json; charset=utf-8" },
     });

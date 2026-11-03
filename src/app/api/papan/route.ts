@@ -32,28 +32,64 @@ export const dynamic = "force-dynamic";
  */
 let lastGoodPapan: ShowcaseItem[] | null = null;
 
+// S-07: cache mikro 20 dtk + single-flight. Papan dipanggil SETIAP kunjungan
+// beranda (endpoint DB terpanas); burst pengunjung serentak kini berbagi SATU
+// query DB, dan kunjungan ulang dalam 20 dtk tak menyentuh DB sama sekali —
+// selaras Cache-Control browser max-age=20 yang memang sudah dipakai di bawah.
+const PAPAN_TTL_MS = 20_000;
+let papanCache: { items: ShowcaseItem[]; at: number } | null = null;
+let papanInflight: Promise<ShowcaseItem[]> | null = null;
+
+async function muatPapan(): Promise<ShowcaseItem[]> {
+  const rows = await withDbRetry(() =>
+    db.confession.findMany({
+      where: { showMessage: true, isPublic: true, reportCount: { lt: 3 } },
+      orderBy: { createdAt: "desc" },
+      take: 14,
+      select: {
+        id: true,
+        fromName: true,
+        showAs: true,
+        toName: true,
+        theme: true,
+        message: true,
+        createdAt: true,
+        response: true,
+      },
+    })
+  );
+  return rows.map(toShowcaseItem);
+}
+
 export async function GET() {
+  if (papanCache && Date.now() - papanCache.at < PAPAN_TTL_MS) {
+    return NextResponse.json(
+      { items: papanCache.items },
+      {
+        headers: {
+          "Cache-Control": "public, max-age=20, stale-while-revalidate=40",
+          "X-Feed-Source": "cache",
+        },
+      }
+    );
+  }
+
+  // single-flight: gabungkan semua cache-miss paralel jadi satu query
+  if (!papanInflight) {
+    papanInflight = muatPapan()
+      .then((items) => {
+        papanCache = { items, at: Date.now() };
+        lastGoodPapan = items;
+        return items;
+      })
+      .finally(() => {
+        papanInflight = null;
+      });
+  }
+
   let items: ShowcaseItem[] = [];
   try {
-    const rows = await withDbRetry(() =>
-      db.confession.findMany({
-        where: { showMessage: true, isPublic: true, reportCount: { lt: 3 } },
-        orderBy: { createdAt: "desc" },
-        take: 14,
-        select: {
-          id: true,
-          fromName: true,
-          showAs: true,
-          toName: true,
-          theme: true,
-          message: true,
-          createdAt: true,
-          response: true,
-        },
-      })
-    );
-    items = rows.map(toShowcaseItem);
-    lastGoodPapan = items;
+    items = await papanInflight;
   } catch (err) {
     console.error("GET /api/papan error:", err);
     // stale-while-error: salinan terakhir lebih jujur daripada papan kosong
