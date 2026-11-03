@@ -1,0 +1,107 @@
+# S-05: Backup mingguan DB Sayangin + restore drill otomatis.
+#
+# SETUP SEKALI (2 menit) — wajib sebelum workflow ini bisa jalan:
+#   GitHub repo → Settings → Secrets and variables → Actions →
+#   New repository secret:
+#     Name : SUPABASE_DB_URL
+#     Value: postgresql://postgres.<REF>:<PASSWORD_DB>@aws-0-<REGION>.pooler.supabase.com:5432/postgres
+#
+#   Contoh format (isi asli TIDAK boleh ditulis di file ini — pakai secret):
+#     postgresql://postgres.<REF>:<PASSWORD_DB>@aws-0-<REGION>.pooler.supabase.com:5432/postgres
+#   (REF & REGION lihat Dashboard Supabase → Project Settings → Database →
+#    Connection string → "Session pooler".)
+#
+# Kenapa session pooler 5432 (BUKAN transaction pooler 6543)?
+#   • Runner GitHub Actions hanya punya IPv4, sedangkan direct connection
+#     db.<ref>.supabase.co (5432) itu IPv6-only di free tier → pg_dump dari
+#     runner tidak akan pernah terhubung kalau pakai host direct.
+#   • Aturan "dilarang pooler 6543" tetap tegak: itu larangan TRANSACTION
+#     pooler untuk app; job backup ini pakai SESSION mode di port 5432 —
+#     proxy TCP pass-through, pg_dump cuma membuka 1 koneksi sekali seminggu.
+#   • App produksi tetap 100% via Hyperdrive direct 5432 (tidak berubah).
+#
+# Retensi: artifact GitHub 90 hari, diunggah tiap Minggu 03:00 UTC (10:00 WIB).
+# Restore drill: job kedua memulihkan dump ke Postgres kosong lalu menghitung
+# baris "Confession" — kalau dump rusak, job ini MERAH dan kamu tahu sebelum
+# benar-benar butuh.
+
+name: Backup Mingguan DB (S-05)
+
+on:
+  schedule:
+    - cron: "0 3 * * 0" # Minggu 03:00 UTC = 10:00 WIB
+  workflow_dispatch: {} # tombol "Run workflow" manual di tab Actions
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pasang postgres client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+
+      - name: pg_dump database
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          mkdir -p backup
+          DUMP="backup/sayangin-$(date +'%Y-%m-%d').sql.gz"
+          pg_dump "$SUPABASE_DB_URL" \
+            --no-owner --no-privileges --clean --if-exists \
+            | gzip > "$DUMP"
+          SIZE=$(stat -c%s "$DUMP")
+          echo "Ukuran dump: $SIZE bytes"
+          # dump < 2 KB berarti hampir pasti gagal/kosong — gagalkan job
+          if [ "$SIZE" -lt 2048 ]; then
+            echo "::error::Dump kosong/terlalu kecil — cek secret SUPABASE_DB_URL"
+            exit 1
+          fi
+
+      - name: Unggah artifact (retensi 90 hari)
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ github.run_number }}
+          path: backup/
+          retention-days: 90
+
+  restore-drill:
+    needs: backup
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: drill
+          POSTGRES_DB: drill
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Unduh artifact backup
+        uses: actions/download-artifact@v4
+        with:
+          name: db-backup-${{ github.run_number }}
+          path: backup/
+
+      - name: Pasang postgres client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+
+      - name: Restore ke Postgres bersih (drill)
+        run: |
+          gunzip -c backup/*.sql.gz | psql "postgresql://postgres:drill@localhost:5432/drill" 2>&1 | tail -5
+
+      - name: Verifikasi data terbaca dari hasil restore
+        run: |
+          COUNT=$(psql "postgresql://postgres:drill@localhost:5432/drill" -t -A -c 'select count(*) from "Confession";')
+          echo "Baris Confession berhasil dipulihkan: $COUNT"
+          if [ -z "$COUNT" ]; then
+            echo "::error::Restore gagal — tabel Confession tidak terbaca"
+            exit 1
+          fi

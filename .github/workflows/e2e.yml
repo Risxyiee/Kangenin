@@ -1,0 +1,34 @@
+name: E2E
+
+on:
+  workflow_dispatch:
+# Trigger push/pull_request SENGAJA dimatikan dulu: specs Playwright belum
+# ditulis (card 5 — daftar journey harus disetujui dulu). Aktifkan begitu
+# specs pertama di-commit supaya CI tidak merah "no tests found".
+
+jobs:
+  e2e:
+    # App anonim tanpa auth — tes menembak produksi langsung (gratis, masa uji).
+    # Data uji ditandai "QA Bot"/"Penerima Uji"; rate limit 5 create/15 menit/IP
+    # aman karena workers: 1.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+      - name: Run E2E (produksi)
+        run: npm run test:e2e:ci
+        env:
+          E2E_BASE_URL: https://www.kangenin.web.id
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
