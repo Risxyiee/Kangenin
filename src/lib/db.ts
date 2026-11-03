@@ -77,13 +77,17 @@ function makePool(connectionString: string | undefined): PgPool {
   const pool = new Pool({
     ...(connectionString ? { connectionString } : {}),
     // ── batas higiene koneksi (lihat komentar arsitektur di atas) ──
-    max: 8, // per isolate; pooling global dilakukan Hyperdrive. 3→5: tes beban
+    max: 12, // per isolate; pooling global dilakukan Hyperdrive. 3→5: tes beban
     // produksi 2026-11-02 (scripts/load_test.py) menangkap 500 burst saat 5
     // user serentak — antrean nunggu client pool melebihi
     // connectionTimeoutMillis → 500 tanpa kesempatan diulang. 5→8: burst test
     // 2026-11-02 (scripts/burst_test.py) — 30 concurrent /?k= masih 3×500
     // (withDbRetry kehabisan budget nunggu antrean); 8 + query UNION di
     // detectKind menekan kontensi. Tetap jauh di bawah pagu koneksi Supabase.
+    // 8→12 (audit pralaunch 2026-11-03): burst 10× wall pada isolate DINGIN
+    // pasca-deploy masih 1×500 — 8 dial serentak (2-6 dtk) membuat pengantri
+    // kehabisan sabar 7,5 dtk lalu ikut lomba retry hingga anggaran habis.
+    // 12 dial paralel menyedot antrean: semua dilayani dalam gelombang pertama.
     // 5→7,5 dtk (audit pralaunch 2026-11-03): burst 10-15 concurrent pada
     // isolate DINGIN — 8 dial origin berlangsung serentak (2-5 dtk/dial);
     // pengantri yang sabar 5 dtk kena "took longer than" lalu ikut lomba retry.
@@ -207,6 +211,13 @@ if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = db
 // sehat): dial dingin tak lagi berubah jadi error — paling banter user
 // menunggu lebih lama di jalur yang sama-sama langka itu. I/O wait TIDAK
 // dihitung CPU Worker, jadi ini aman terhadap Error 1102.
+//
+// 12→15 dtk (audit pralaunch 2026-11-03, burst 10× wall isolate dingin
+// pasca-deploy: 1×500 @12,08 dtk): skenario terburuk kini antre pool 7,5 dtk
+// (attempt-1 "took longer than") + jeda 0,4 + attempt-2 penuh 6 dtk
+// (query_timeout) = 13,9 dtk — masih melebihi 12 dtk. 15 dtk menutupnya
+// dengan sisa; tetap jauh di bawah batas waktu request Worker (I/O wait
+// gratis, CPU tak tersentuh).
 const RETRYABLE = /query read timeout|connection terminated|timeout exceeded|took longer than|statement timeout|ECONNRESET|socket hang up|anggaran db/i
 // "took longer than"      = antre nunggu client pool (connectionTimeoutMillis)
 // "statement timeout"     = server memotong query nangkring (57014) — koneksi
@@ -287,7 +298,7 @@ export async function withDbRetry<T>(
   fn: () => Promise<T>,
   opts?: { budgetMs?: number }
 ): Promise<T> {
-  const budgetMs = opts?.budgetMs ?? 12_000
+  const budgetMs = opts?.budgetMs ?? 15_000
   const deadline = Date.now() + budgetMs
   let lastErr: unknown
   for (let attempt = 0; attempt < 3; attempt++) {
