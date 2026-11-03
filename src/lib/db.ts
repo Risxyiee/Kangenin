@@ -84,7 +84,12 @@ function makePool(connectionString: string | undefined): PgPool {
     // 2026-11-02 (scripts/burst_test.py) — 30 concurrent /?k= masih 3×500
     // (withDbRetry kehabisan budget nunggu antrean); 8 + query UNION di
     // detectKind menekan kontensi. Tetap jauh di bawah pagu koneksi Supabase.
-    connectionTimeoutMillis: 5_000, // gagal cepat, jangan biarkan user nunggu lama
+    // 5→7,5 dtk (audit pralaunch 2026-11-03): burst 10-15 concurrent pada
+    // isolate DINGIN — 8 dial origin berlangsung serentak (2-5 dtk/dial);
+    // pengantri yang sabar 5 dtk kena "took longer than" lalu ikut lomba retry.
+    // 7,5 dtk memberi pengantri kesabaran menunggu 8 dial selesai → request
+    // dilayani tanpa retry (burst papan 10×: p95 8,5 dtk tapi 100% 200).
+    connectionTimeoutMillis: 7_500,
     // 4,5 dtk: audit produksi 2026-11-01 (scripts/audit_all_flows.sh) menemukan
     // hampir semua request menggenangi 3 dtk pas — polanya: query PERTAMA pada
     // koneksi segar menunggu Hyperdrive dial origin dingin (TLS + auth ke
@@ -178,11 +183,21 @@ if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = db
 //   2. Setiap attempt di-race dengan sisa anggaran (lapis baru): attempt yang
 //      menggantung DIPOTONG tepat saat anggaran habis, jadi total waktu blok
 //      DB DIJAMIN ≤ budgetMs + jeda, apa pun yang terjadi di bawahnya. Query
-//      yang tertinggal tetap diawasi query_timeout (3 dtk) — klien basi
-//      dibunuh lalu dibuang pool; tidak menumpuk di max=5.
+//      yang tertinggal tetap diawasi query_timeout (4,5 dtk) — klien basi
+//      dibunuh lalu dibuang pool; tidak menumpuk di max=8.
 // Peluang ketiga attempt semuanya kena zombie sangat kecil; kalau anggaran
 // habis, error naik cepat dengan pesan rapi + tombol coba lagi — BUKAN
 // 18–24 dtk hening seperti episode lama.
+//
+// 8,5→12 dtk (audit pralaunch 2026-11-03): dua insiden 500 transien di
+// produksi (POST /api/confess 11 dtk, GET /api/confess/[slug] 8,5 dtk) —
+// polanya: attempt-1 mati di query_timeout 4,5 dtk karena dial dingin
+// Hyperdrive→Supabase 5 dtk+, jeda 0,3 dtk, lalu attempt-2 butuh penuh 4,5
+// dtk lagi = 9,3 dtk > anggaran 8,5 dtk → attempt-2 dipotong → 500.
+// Anggaran 12 dtk memberi ruang penuh bagi attempt-2 (dan attempt-3 yang
+// sehat): dial dingin tak lagi berubah jadi error — paling banter user
+// menunggu lebih lama di jalur yang sama-sama langka itu. I/O wait TIDAK
+// dihitung CPU Worker, jadi ini aman terhadap Error 1102.
 const RETRYABLE = /query read timeout|connection terminated|timeout exceeded|took longer than|statement timeout|ECONNRESET|socket hang up|anggaran db/i
 // "took longer than"      = antre nunggu client pool (connectionTimeoutMillis)
 // "statement timeout"     = server memotong query nangkring (57014) — koneksi
@@ -263,7 +278,7 @@ export async function withDbRetry<T>(
   fn: () => Promise<T>,
   opts?: { budgetMs?: number }
 ): Promise<T> {
-  const budgetMs = opts?.budgetMs ?? 8_500
+  const budgetMs = opts?.budgetMs ?? 12_000
   const deadline = Date.now() + budgetMs
   let lastErr: unknown
   for (let attempt = 0; attempt < 3; attempt++) {

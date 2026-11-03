@@ -1,8 +1,10 @@
 import type { Metadata } from "next"
+import { guardTestStage } from "@/lib/test-stage"
 
 /**
- * Layout /test-confess — hanya menyematkan noindex.
- * Halaman panggung uji/demo internal; jangan muncul di hasil pencarian.
+ * Layout /test-confess — panggung uji internal.
+ * noindex + gerbang guardTestStage: di produksi rute ini 404 (lihat
+ * src/lib/test-stage.ts); hidup hanya di next dev untuk screenshot Playwright.
  */
 export const metadata: Metadata = {
   title: "Panggung Uji — Confess | Kangenin",
@@ -10,5 +12,6 @@ export const metadata: Metadata = {
 }
 
 export default function TestConfessLayout({ children }: { children: React.ReactNode }) {
+  guardTestStage() // produksi → notFound()
   return children
 }

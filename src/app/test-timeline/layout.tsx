@@ -1,8 +1,10 @@
 import type { Metadata } from "next"
+import { guardTestStage } from "@/lib/test-stage"
 
 /**
- * Layout /test-timeline — hanya menyematkan noindex.
- * Halaman panggung uji/demo internal; jangan muncul di hasil pencarian.
+ * Layout /test-timeline — panggung uji internal.
+ * noindex + gerbang guardTestStage: di produksi rute ini 404 (lihat
+ * src/lib/test-stage.ts); hidup hanya di next dev untuk screenshot Playwright.
  */
 export const metadata: Metadata = {
   title: "Panggung Uji — Timeline | Kangenin",
@@ -10,5 +12,6 @@ export const metadata: Metadata = {
 }
 
 export default function TestTimelineLayout({ children }: { children: React.ReactNode }) {
+  guardTestStage() // produksi → notFound()
   return children
 }
