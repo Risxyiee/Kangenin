@@ -71,3 +71,6 @@ download/
 # playwright
 playwright-report/
 test-results/
+
+# Proyek template terpisah di dalam sandbox — BUKAN bagian repo Kangenin
+sayangin/
