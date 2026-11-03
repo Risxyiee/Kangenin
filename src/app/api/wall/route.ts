@@ -11,6 +11,19 @@ export const runtime = "nodejs";
 // status jawaban (bukan isinya), dan reaksi. Intrigasi = mesin FOMO,
 // privasi = kepercayaan.
 
+/**
+ * Salinan respons sukses terakhir (stale-while-error, per-isolate).
+ *
+ * Feed sosial TIDAK BOLEH 500 (filosofi /api/papan). Bukti audit pralaunch
+ * 2026-11-03: burst 15× pada isolate dingin — dial Hyperdrive→Supabase yang
+ * lama membuat 3/15 attempt kehabisan anggaran 15 dtk. Dengan salinan ini,
+ * 12 request yang sukses menyimpan jawabannya dan 3 yang gagal menyajikan
+ * salinan berusia 1–2 dtk — pengunjung tidak melihat error apa pun. Isolate
+ * segar yang belum pernah sukses pun tetap 200 dengan items kosong (bukan
+ * 500), menyusul filosofi papan.
+ */
+let lastGoodWall: string | null = null;
+
 export async function GET(req: NextRequest) {
   try {
     const limitRaw = Number(req.nextUrl.searchParams.get("limit") ?? 48);
@@ -35,7 +48,7 @@ export async function GET(req: NextRequest) {
       })
     );
 
-    return NextResponse.json({
+    const payload = JSON.stringify({
       items: rows.map((r) => ({
         id: r.id,
         from: r.fromName.trim() || "Seseorang",
@@ -46,12 +59,32 @@ export async function GET(req: NextRequest) {
         reactions: r.reactions ?? { heart: 0, laugh: 0, cry: 0, bloom: 0 },
       })),
     });
+    lastGoodWall = payload;
+
+    return new NextResponse(payload, {
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+    });
   } catch (err) {
     console.error("GET /api/wall error:", describeError(err), err);
     reportError(err, { route: "GET /api/wall" });
+
+    // stale-while-error: salinan sukses terakhir di isolate ini (usia detik–
+    // menit) jauh lebih baik daripada error untuk feed publik.
+    if (lastGoodWall) {
+      return new NextResponse(lastGoodWall, {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "X-Feed-Source": "stale",
+        },
+      });
+    }
+
+    // isolate belum pernah sukses (sangat langka) — tetap 200, bukan 500:
+    // dinding kosong sesaat lebih lembut daripada halaman error.
     return NextResponse.json(
-      { error: "Gagal memuat dinding. Coba lagi ya." },
-      { status: 500 }
+      { items: [] },
+      { headers: { "X-Feed-Source": "fallback-empty" } }
     );
   }
 }

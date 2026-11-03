@@ -23,6 +23,15 @@ import { toShowcaseItem, type ShowcaseItem } from "@/lib/papan";
 // Halaman depan memanggil ini tiap kunjungan — jangan di-cache Next di server.
 export const dynamic = "force-dynamic";
 
+/**
+ * Salinan sukses terakhir (stale-while-error, per-isolate) — pelengkap
+ * filosofi "JANGAN pernah 500-kan feed sosial" di atas. Bukti audit pralaunch
+ * 2026-11-03: burst di isolate dingin bisa membuat sebagian attempt kehabisan
+ * anggaran retry; daripada menyajikan papan kosong palsu (terlihat seperti
+ * tidak ada pengakuan sama sekali), sajikan salinan terakhir yang sukses.
+ */
+let lastGoodPapan: ShowcaseItem[] | null = null;
+
 export async function GET() {
   let items: ShowcaseItem[] = [];
   try {
@@ -44,8 +53,11 @@ export async function GET() {
       })
     );
     items = rows.map(toShowcaseItem);
+    lastGoodPapan = items;
   } catch (err) {
     console.error("GET /api/papan error:", err);
+    // stale-while-error: salinan terakhir lebih jujur daripada papan kosong
+    if (lastGoodPapan) items = lastGoodPapan;
   }
 
   return NextResponse.json(
