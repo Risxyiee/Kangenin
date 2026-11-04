@@ -4,17 +4,18 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 
 // ── Panel Admin (/admin) — khusus founder ────────────────────────────────────
-// Empat modul (gerbang satu kunci ADMIN_KEY, pola sama dengan /insight):
+// Lima modul (gerbang satu kunci ADMIN_KEY, pola sama dengan /insight):
 //   1. Ringkasan — statistik seluruh platform + tren 7 hari
 //   2. Masukan   — kelola feedback: tandai dibaca/selesai, hapus spam
 //   3. Dinding   — moderasi Dinding Kangenin: sembunyikan / tampilkan / hapus
 //   4. Keamanan  — denyut DB, rate limit aktif, log error + perawatan
+//   5. Kunjungan — halaman yang paling sering dikunjungi user (S-08)
 //
 // Data per tab dimuat malas (saat pertama dibuka) — buka halaman tetap ringan.
 // Aksi tulis pakai optimistic update + rollback kalau API gagal (Hyperdrive
 // sesekali 500 sesaat — jangan bikin owner menunggu atau kehilangan state).
 
-type Tab = "ringkasan" | "masukan" | "dinding" | "keamanan";
+type Tab = "ringkasan" | "masukan" | "dinding" | "keamanan" | "kunjungan";
 
 const STORAGE_KEY = "kangenin-admin-key";
 
@@ -77,6 +78,29 @@ type KeamananData = {
     items: { id: string; route: string; message: string; createdAt: string }[];
   };
 };
+
+type KunjunganData = {
+  tersedia: boolean;
+  hariIni: number;
+  mingguIni: number;
+  total: number;
+  top: { path: string; hariIni: number; mingguIni: number; total: number }[];
+};
+
+// Label ramah untuk path yang dikenal; sisanya tampil apa adanya.
+function labelPath(path: string): string {
+  const statis: Record<string, string> = {
+    "/": "🏠 Beranda",
+    "/dinding": "💌 Dinding Kangenin",
+    "/masukan": "💬 Masukan",
+    "/bantuan": "❓ Bantuan",
+    "/create": "🎁 Buat Kado",
+  };
+  if (statis[path]) return statis[path];
+  if (path.startsWith("/kado/")) return "🎁 Halaman kado (penerima)";
+  if (path.startsWith("/confess/")) return "💌 Halaman confess";
+  return path;
+}
 
 // ── Label ramah ──
 const KADO_TYPE_LABEL: Record<string, string> = {
@@ -191,6 +215,10 @@ export default function AdminBoard() {
   const [kmBusy, setKmBusy] = useState(false);
   const [kmNote, setKmNote] = useState("");
 
+  const [kunjungan, setKunjungan] = useState<KunjunganData | null>(null);
+  const [kjLoading, setKjLoading] = useState(false);
+  const [kjError, setKjError] = useState("");
+
   // ── helper fetch dengan header kunci ──
   async function api(path: string, init?: RequestInit): Promise<Record<string, unknown>> {
     const res = await fetch(path, {
@@ -260,11 +288,25 @@ export default function AdminBoard() {
     }
   }
 
+  async function loadKunjungan() {
+    setKjLoading(true);
+    setKjError("");
+    try {
+      const json = await api("/api/admin/kunjungan");
+      setKunjungan(json as unknown as KunjunganData);
+    } catch (e) {
+      setKjError(e instanceof Error ? e.message : "Gagal memuat kunjungan.");
+    } finally {
+      setKjLoading(false);
+    }
+  }
+
   function loadTab(t: Tab) {
     if (t === "ringkasan" && !overview && !ovLoading) void loadOverview();
     if (t === "masukan" && !masukan && !msLoading) void loadMasukan();
     if (t === "dinding" && !dinding && !ddLoading) void loadDinding();
     if (t === "keamanan" && !keamanan && !kmLoading) void loadKeamanan();
+    if (t === "kunjungan" && !kunjungan && !kjLoading) void loadKunjungan();
   }
 
   function switchTab(t: Tab) {
@@ -404,8 +446,9 @@ export default function AdminBoard() {
   }
 
   // ── aksi: keamanan ──
-  async function perawatan(action: "sapu-rate-limit" | "bersihkan-error") {
+  async function perawatan(action: "sapu-rate-limit" | "bersihkan-error" | "sapu-qa") {
     if (action === "bersihkan-error" && !window.confirm("Kosongkan seluruh log error?")) return;
+    if (action === "sapu-qa" && !window.confirm("Hapus SEMUA confess & kado uji ber-tanda QA Bot/AuditBot?")) return;
     setKmBusy(true);
     setKmNote("");
     try {
@@ -414,7 +457,13 @@ export default function AdminBoard() {
         body: JSON.stringify({ action }),
       });
       const n = Number(json.deleted ?? 0);
-      setKmNote(action === "sapu-rate-limit" ? `${n} entri rate limit basi terhapus.` : `${n} log error terhapus.`);
+      setKmNote(
+        action === "sapu-rate-limit"
+          ? `${n} entri rate limit basi terhapus.`
+          : action === "sapu-qa"
+            ? `${n} baris data uji (confess + kado QA Bot/AuditBot) terhapus.`
+            : `${n} log error terhapus.`
+      );
       await loadKeamanan();
     } catch (e) {
       setKmError(e instanceof Error ? e.message : "Gagal menjalankan perawatan.");
@@ -475,6 +524,7 @@ export default function AdminBoard() {
     { id: "masukan", label: "Masukan" },
     { id: "dinding", label: "Dinding" },
     { id: "keamanan", label: "Keamanan" },
+    { id: "kunjungan", label: "Kunjungan" },
   ];
 
   return (
@@ -490,6 +540,7 @@ export default function AdminBoard() {
             setMasukan(null);
             setDinding(null);
             setKeamanan(null);
+            setKunjungan(null);
             loadTab(tab);
           }}
           className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-accent/40"
@@ -502,7 +553,7 @@ export default function AdminBoard() {
       </p>
 
       {/* Tab bar */}
-      <div className="mt-5 grid grid-cols-4 gap-1 rounded-2xl border border-border bg-card p-1.5">
+      <div className="mt-5 grid grid-cols-5 gap-1 rounded-2xl border border-border bg-card p-1.5">
         {tabs.map((t) => (
           <button
             key={t.id}
@@ -931,6 +982,80 @@ export default function AdminBoard() {
                   </>
                 )}
               </div>
+              {/* Sapu data uji */}
+              <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="font-display text-lg font-bold text-foreground">Data uji QA Bot</h2>
+                  <button
+                    type="button"
+                    disabled={kmBusy}
+                    onClick={() => void perawatan("sapu-qa")}
+                    className="rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-accent/40 disabled:opacity-50"
+                  >
+                    🧹 Sapu data QA
+                  </button>
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Uji otomatis (E2E & audit) menandai datanya "QA Bot"/"AuditBot". Tombol ini
+                  menyapu semuanya sekali klik — dipakai juga oleh cleanup otomatis E2E.
+                </p>
+              </div>
+            </>
+          )}
+        </section>
+      )}
+
+      {/* ═══ MODUL 5: KUNJUNGAN ═══ */}
+      {tab === "kunjungan" && (
+        <section className="mt-6">
+          {kjLoading && <p className="text-sm text-muted-foreground">Memuat kunjungan…</p>}
+          {kjError && <p className="text-sm text-destructive">{kjError}</p>}
+          {kunjungan && !kunjungan.tersedia && (
+            <p className="rounded-2xl border border-dashed border-border bg-card/50 p-8 text-center text-sm text-muted-foreground">
+              Tabel kunjungan belum dibuat di database — jalankan SQL setup
+              "PageVisitDaily" di Supabase dulu (cek catatan dari asisten), lalu muat ulang.
+            </p>
+          )}
+          {kunjungan?.tersedia && (
+            <>
+              <div className="grid grid-cols-3 gap-2">
+                <StatCard value={nf(kunjungan.hariIni)} label="kunjungan hari ini" />
+                <StatCard value={nf(kunjungan.mingguIni)} label="kunjungan 7 hari" />
+                <StatCard value={nf(kunjungan.total)} label="total tercatat" />
+              </div>
+              {kunjungan.top.length === 0 ? (
+                <p className="mt-6 rounded-2xl border border-dashed border-border bg-card/50 p-8 text-center text-sm text-muted-foreground">
+                  Belum ada kunjungan tercatat — buka beberapa halaman lalu muat ulang.
+                </p>
+              ) : (
+                <div className="mt-4 space-y-3">
+                  {kunjungan.top.map((r) => {
+                    const max = Math.max(1, ...kunjungan.top.map((x) => x.mingguIni));
+                    return (
+                      <div key={r.path} className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="truncate text-sm font-semibold text-foreground">
+                            {labelPath(r.path)}
+                          </span>
+                          <span className="shrink-0 text-xs font-medium text-muted-foreground">
+                            {nf(r.mingguIni)} · 7 hari
+                          </span>
+                        </div>
+                        <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted/60">
+                          <div
+                            className="h-full rounded-full bg-primary"
+                            style={{ width: `${Math.max(4, (r.mingguIni / max) * 100)}%` }}
+                          />
+                        </div>
+                        <p className="mt-1.5 text-[11px] text-muted-foreground">
+                          hari ini {nf(r.hariIni)} · total {nf(r.total)}
+                          <span className="ml-1 font-mono">({r.path})</span>
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </>
           )}
         </section>

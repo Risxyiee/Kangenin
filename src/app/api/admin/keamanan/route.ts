@@ -18,12 +18,15 @@ export const runtime = "nodejs";
 //   { action: "sapu-rate-limit" }  → hapus entri window > 1 hari (basi, aman:
 //                                    limiter memang menyapunya otomatis)
 //   { action: "bersihkan-error" }  → kosongkan error_log (setelah dibaca)
+//   { action: "sapu-qa" }          → hapus semua confess/kado uji ber-tanda
+//                                    "QA Bot"/"AuditBot" (dipakai juga oleh
+//                                    cleanup otomatis E2E Playwright)
 //
 // Tabel infrastruktur belum dibuat (belum ada traffic/error) → panel tampil
 // kosong, bukan 500 — prinsip yang sama dengan modul lain.
 
 const postSchema = z.object({
-  action: z.enum(["sapu-rate-limit", "bersihkan-error"]),
+  action: z.enum(["sapu-rate-limit", "bersihkan-error", "sapu-qa"]),
 });
 
 type RateRow = { key: string; count: number; window_start: string };
@@ -165,6 +168,25 @@ export async function POST(req: NextRequest) {
     }
 
     const nonce = dbNonce();
+    if (parsed.data.action === "sapu-qa") {
+      // Sapu data uji otomatis (E2E Playwright & audit manual):
+      // - Confession dari pengirim "QA Bot" (termasuk yang private, karena
+      //   tidak akan muncul di moderasi dinding)
+      // - Kado yang dibuat "QA Bot"/"AuditBot" (penanda uji E2E & audit)
+      // Reaksi confess ikut terhapus lewat cascade FK ReactionCount.
+      const res = await withDbRetry(() =>
+        getPgPool().query(
+          `/* ${nonce} */
+           delete from "Confession" where "fromName" = 'QA Bot';
+           delete from "Kado" where "senderName" in ('QA Bot', 'AuditBot');`
+        )
+      );
+      return NextResponse.json(
+        { success: true, deleted: res.rowCount ?? 0 },
+        { headers: { "Cache-Control": "no-store, max-age=0" } }
+      );
+    }
+
     const sql =
       parsed.data.action === "sapu-rate-limit"
         ? `/* ${nonce} */ delete from rate_limit where window_start < now() - interval '1 day'`
