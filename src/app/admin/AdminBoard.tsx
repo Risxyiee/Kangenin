@@ -204,6 +204,7 @@ export default function AdminBoard() {
   const [msBusy, setMsBusy] = useState<string | null>(null);
 
   const [dinding, setDinding] = useState<DindingItem[] | null>(null);
+  const [ddSemua, setDdSemua] = useState(false);
   const [ddLoading, setDdLoading] = useState(false);
   const [ddError, setDdError] = useState("");
   const [ddRevealed, setDdRevealed] = useState<Record<string, boolean>>({});
@@ -262,11 +263,11 @@ export default function AdminBoard() {
     }
   }
 
-  async function loadDinding() {
+  async function loadDinding(semua: boolean = false) {
     setDdLoading(true);
     setDdError("");
     try {
-      const json = await api("/api/admin/dinding");
+      const json = await api(`/api/admin/dinding${semua ? "?semua=1" : ""}`);
       setDinding((json.items as DindingItem[]) ?? []);
     } catch (e) {
       setDdError(e instanceof Error ? e.message : "Gagal memuat dinding.");
@@ -767,6 +768,20 @@ export default function AdminBoard() {
       {/* ═══ MODUL 3: DINDING ═══ */}
       {tab === "dinding" && (
         <section className="mt-6">
+          {/* Pemulihan: entri tersembunyi tanpa laporan tidak masuk daftar
+              default — centang ini untuk melihat & membatalkan salah-klik. */}
+          <label className="mb-3 flex items-center gap-2 text-sm text-muted-foreground">
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-primary"
+              checked={ddSemua}
+              onChange={(e) => {
+                setDdSemua(e.target.checked);
+                void loadDinding(e.target.checked);
+              }}
+            />
+            Tampilkan juga surat privat &amp; tersembunyi (30 hari terakhir)
+          </label>
           {ddLoading && <p className="text-sm text-muted-foreground">Memuat dinding…</p>}
           {ddError && <p className="text-sm text-destructive">{ddError}</p>}
           {dinding && dinding.length === 0 && (

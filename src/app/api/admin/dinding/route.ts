@@ -43,11 +43,21 @@ export async function GET(req: NextRequest) {
     }
 
     const nonce = dbNonce();
+    // ?semua=1 → sertakan surat privat/tersembunyi 30 hari terakhir.
+    // Entri tersembunyi tanpa laporan tidak masuk daftar default, jadi
+    // salah-klik "Sembunyikan" tidak bisa dibatalkan dari panel (bukti
+    // produksi 2026-11-04) — mode ini jadi jalan pemulihannya. Mode ini
+    // tetap gerbang admin: isi surat di UI tetap tersembunyi sampai owner
+    // menekan "lihat isi".
+    const semua = req.nextUrl.searchParams.get("semua") === "1";
+    const sejak = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const rows = await withDbRetry(() =>
       db.confession.findMany({
-        where: { OR: [{ isPublic: true }, { reportCount: { gt: 0 } }] },
+        where: semua
+          ? { createdAt: { gte: sejak } }
+          : { OR: [{ isPublic: true }, { reportCount: { gt: 0 } }] },
         orderBy: { createdAt: "desc" },
-        take: 80,
+        take: semua ? 120 : 80,
         select: {
           id: true,
           fromName: true,
