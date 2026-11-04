@@ -2,10 +2,11 @@ import { expect, test } from "@playwright/test"
 
 /**
  * J2 — Creator Studio /create: validasi langkah + pilih kado premium + generate link.
- * Hard refactor: pilihan HANYA 6 pengalaman premium (bouquet, openwhen,
- * photobox, coupon, candle, confess) — opsi lama (sidik jari/tap/kartu
- * gosok/kuis/playlist) tidak boleh ada lagi.
- * Data nyawa-nyawa produksi — ditandai "QA Bot"/"Penerima Uji" agar mudah dikenali.
+ * Sejak pengembangan berikutnya, pengalaman premium jadi 8: bouquet, openwhen,
+ * photobox, coupon, candle, confess, timeline, playlist. Tipe LEGACY (sidik
+ * jari/tap/kartu gosok/kuis) tetap dilarang muncul di pembuat.
+ * Data nyawa-nyawa produksi — ditandai "QA Bot"/"Penerima Uji" agar mudah dikenali,
+ * dan kado uji DIHAPUS sendiri di akhir journey.
  */
 
 const PREMIUM_OPTIONS = [
@@ -15,6 +16,8 @@ const PREMIUM_OPTIONS = [
   "Love Coupon",
   "Candle Blow",
   "Confess",
+  "Timeline Kisah",
+  "Playlist Lagu",
 ]
 
 test.describe("Creator Studio", () => {
@@ -40,8 +43,8 @@ test.describe("Creator Studio", () => {
     for (const label of PREMIUM_OPTIONS) {
       await expect(group.getByRole("radio", { name: new RegExp(label, "i") })).toHaveCount(1)
     }
-    // opsi lama sudah dihapus — tidak boleh muncul lagi
-    for (const lama of ["Sidik Jari", "Tap Layar", "Kartu Gosok", "Kuis", "Playlist"]) {
+    // opsi legacy sudah dihapus — tidak boleh muncul lagi
+    for (const lama of ["Sidik Jari", "Tap Layar", "Kartu Gosok", "Kuis"]) {
       await expect(group.getByRole("radio", { name: new RegExp(lama, "i") })).toHaveCount(0)
     }
     // tanpa duplikat "Buket"
@@ -68,5 +71,13 @@ test.describe("Creator Studio", () => {
     await page.getByRole("button", { name: /Generate/i }).click()
     await page.waitForURL(/\/kado\/[0-9a-f-]{36}\/share/, { timeout: 45_000 })
     await expect(page).toHaveURL(/\/kado\/[0-9a-f-]{36}\/share/)
+
+    // bersih-bersih: hapus kado uji supaya produksi tak menumpuk data QA
+    // (DELETE /api/kado/[id] publik & idempoten — selalu 200)
+    const kadoId = page.url().match(/\/kado\/([0-9a-f-]{36})/)?.[1]
+    if (kadoId) {
+      const del = await page.request.delete(`/api/kado/${kadoId}`)
+      expect(del.ok()).toBeTruthy()
+    }
   })
 })

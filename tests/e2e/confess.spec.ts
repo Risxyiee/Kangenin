@@ -29,5 +29,18 @@ test.describe("Confess", () => {
     await expect(
       page.getByRole("link", { name: /Pantau status/i })
     ).toBeVisible()
+
+    // bersih-bersih: confess uji tidak publik (tak muncul di moderasi dinding),
+    // jadi sapu lewat aksi admin "sapu-qa". Butuh secret/env E2E_ADMIN_KEY —
+    // tanpa key, data uji tetap tertanda "QA Bot" dan bisa disapu manual dari
+    // /admin → Keamanan.
+    const kunci = process.env.E2E_ADMIN_KEY
+    if (kunci) {
+      const res = await page.request.post("/api/admin/keamanan", {
+        headers: { "x-admin-key": kunci },
+        data: { action: "sapu-qa" },
+      })
+      expect(res.ok()).toBeTruthy()
+    }
   })
 })

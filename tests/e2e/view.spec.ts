@@ -45,7 +45,7 @@ test.describe("View penerima", () => {
     await page.goto(`/?k=${slug}`)
     await expect(page.getByText(QA.toName).first()).toBeVisible()
     // pesan di balik ritual amplop — pakai tombol pintas buka langsung
-    await page.getByRole("button", { name: /buka langsung tanpa ritual/i }).click()
+    await page.getByRole("button", { name: /buka suratnya langsung/i }).click()
     // isi pesan tampil via mesin ketik — cek frasa khasnya
     await expect(page.getByText(/Tes E2E Playwright view penerima/).first()).toBeVisible({
       timeout: 20_000,

@@ -1,10 +1,15 @@
 name: E2E
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
-# Trigger push/pull_request SENGAJA dimatikan dulu: specs Playwright belum
-# ditulis (card 5 — daftar journey harus disetujui dulu). Aktifkan begitu
-# specs pertama di-commit supaya CI tidak merah "no tests found".
+# Specs Playwright sudah ada (tests/e2e/*) dan semua journey menciptakan data
+# uji ber-tanda "QA Bot" lalu MENGEMBEHKANNYA sendiri (kado: DELETE publik;
+# confess: aksi admin "sapu-qa" via secret E2E_ADMIN_KEY — pasang di repo
+# Settings → Secrets → Actions supaya cleanup otomatis).
+# Jalannya hanya di push main + tombol manual; tunggu deploy Cloudflare dulu
+# supaya tidak menembak versi lama tengah penggantian.
 
 jobs:
   e2e:
@@ -22,10 +27,14 @@ jobs:
         run: npm install
       - name: Install Playwright browser
         run: npx playwright install chromium --with-deps
+      - name: Tunggu deploy Cloudflare selesai (push = deploy baru berjalan)
+        if: github.event_name == 'push'
+        run: sleep 180
       - name: Run E2E (produksi)
         run: npm run test:e2e:ci
         env:
           E2E_BASE_URL: https://www.kangenin.web.id
+          E2E_ADMIN_KEY: ${{ secrets.E2E_ADMIN_KEY }}
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
