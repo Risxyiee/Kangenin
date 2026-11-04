@@ -174,15 +174,26 @@ export async function POST(req: NextRequest) {
       //   tidak akan muncul di moderasi dinding)
       // - Kado yang dibuat "QA Bot"/"AuditBot" (penanda uji E2E & audit)
       // Reaksi confess ikut terhapus lewat cascade FK ReactionCount.
-      const res = await withDbRetry(() =>
+      //
+      // DUA statement = DUA query TERPISAH, bukan satu string "a; b".
+      // Bukti produksi 2026-11-04: multi-statement dalam SATU pool.query()
+      // lewat Hyperdrive selalu gagal → 500 "Gagal menjalankan perawatan"
+      // di panel. Satu statement per query = pola yang sama dengan semua
+      // route lain yang terbukti hidup. Bonus: rowCount per tabel jadi
+      // akurat — versi lama cuma melaporkan hitungan statement TERAKHIR.
+      const hapusConfess = await withDbRetry(() =>
+        getPgPool().query(`/* ${nonce} */ delete from "Confession" where "fromName" = 'QA Bot'`)
+      );
+      const hapusKado = await withDbRetry(() =>
         getPgPool().query(
-          `/* ${nonce} */
-           delete from "Confession" where "fromName" = 'QA Bot';
-           delete from "Kado" where "senderName" in ('QA Bot', 'AuditBot');`
+          `/* ${nonce} */ delete from "Kado" where "senderName" in ('QA Bot', 'AuditBot')`
         )
       );
       return NextResponse.json(
-        { success: true, deleted: res.rowCount ?? 0 },
+        {
+          success: true,
+          deleted: (hapusConfess.rowCount ?? 0) + (hapusKado.rowCount ?? 0),
+        },
         { headers: { "Cache-Control": "no-store, max-age=0" } }
       );
     }
