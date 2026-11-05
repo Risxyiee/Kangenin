@@ -2,6 +2,7 @@
 
 import Navbar from "./Navbar";
 import Hero from "./Hero";
+import AktivitasTicker from "./AktivitasTicker";
 import Marquee from "./Marquee";
 import ShowcaseSection from "./ShowcaseSection";
 import ConfessSection from "./ConfessSection";
@@ -21,6 +22,7 @@ export default function Landing() {
       <Navbar />
       <main className="flex-1">
         <Hero />
+        <AktivitasTicker />
         <Marquee />
         <ShowcaseSection />
         <ConfessSection />
