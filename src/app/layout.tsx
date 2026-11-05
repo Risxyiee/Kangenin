@@ -22,7 +22,12 @@ const caveat = localFont({
 
 export const metadata: Metadata = {
   metadataBase: new URL(
-    process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"
+    // Fallback JANGAN localhost: bukti produksi 2026-11-04 — NEXT_PUBLIC_SITE_URL
+    // tidak terpasang saat build Cloudflare membuat og:image di HTML jadi
+    // "http://localhost:3000/og-generic.png" → crawler WA/Telegram/Twitter gagal
+    // memuat gambar → link yang di-share tampil polos tanpa kartu preview.
+    // Domain produksi tetap dan diketahui — jadikan fallback langsung.
+    process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.kangenin.web.id"
   ),
   title: "Kangenin — tulis surat rahasia, bikin dia kangen",
   description:
@@ -53,6 +58,8 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Kangenin — tulis surat rahasia, bikin dia kangen",
     description: "Confess anonim gratis lewat link, plus kado digital — gratis selama masa uji coba.",
+    // Eksplisit — sebagian crawler X tidak jatuh ke og:image kalau kosong.
+    images: ["/og-generic.png"],
   },
 };
 
