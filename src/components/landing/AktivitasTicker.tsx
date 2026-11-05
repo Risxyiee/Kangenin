@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 
-// Ticker aktivitas langsung di bawah Hero — bukti sosial yang bikin pengunjung
-// baru yakin "ada orang lain yang memakai ini juga". Data dari /api/aktivitas
-// (nama sudah disamarkan di server: "Rifka" → "R***A"); ticker hanya memutar
-// kalimat + mencicil waktu relatif. Kosong → tidak dirender sama sekali.
+// Ticker aktivitas paling atas landing page (tepat di bawah navbar) — bukti
+// sosial yang bikin pengunjung baru yakin "ada orang lain yang memakai ini
+// juga". Data dari /api/aktivitas (nama sudah disamarkan di server: "Rifka" →
+// "R***A"); ticker hanya memutar kalimat + mencicil waktu relatif.
+// Kosong → tidak dirender sama sekali.
 
 type Aktivitas = { jenis: string; nama: string | null; waktu: string };
 

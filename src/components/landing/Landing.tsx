@@ -21,8 +21,12 @@ export default function Landing() {
     <div className="flex min-h-screen flex-col">
       <Navbar />
       <main className="flex-1">
-        <Hero />
+        {/* strip gelap 64px = ruang navbar fixed yang transparan saat di atas;
+            ticker aktivitas taruh PALING ATAS biar pengunjung baru langsung
+            melihat bukti sosial tanpa perlu scroll */}
+        <div className="h-16 bg-[#1b1815]" aria-hidden />
         <AktivitasTicker />
+        <Hero />
         <Marquee />
         <ShowcaseSection />
         <ConfessSection />
