@@ -49,6 +49,17 @@ function maskNama(raw: string | null): string | null {
   return toFomoInitials(nama); // "Rifka" → "R***A", "Putri Ayu" → "P***U"
 }
 
+// Penanda data uji (skrip audit & E2E pra-launch, temuan 2026-11-06):
+// "QA Bot"/"AuditBot" (Playwright), "Audit"→"Tes Alur" (audit_all_flows.sh),
+// "Tim Kangenin"→"Calon Pengguna" (e2e_live.py), "Tester"/"Rahasia"→"Uji …"
+// (test-confess-reply.sh), "Tes/Tujuan {uniq}" (audit_pralaunch*.py).
+// Ticker HANYA menampilkan aktivitas manusia sungguhan — sisa baris uji
+// yang belum kehapus tetap tak akan muncul di sini.
+const BUKAN_UJI =
+  `"fromName" NOT IN ('QA Bot', 'AuditBot', 'Audit', 'TesBot', 'Tester', 'Tim Kangenin') ` +
+  `AND "toName" NOT LIKE 'Uji %' AND "toName" NOT LIKE 'Tujuan %' AND "toName" NOT LIKE 'Tes %' ` +
+  `AND "toName" <> 'Calon Pengguna'`;
+
 async function muatAktivitas(): Promise<string> {
   const rows = await withDbRetry(() =>
     db.$queryRawUnsafe<Row[]>(
@@ -56,31 +67,29 @@ async function muatAktivitas(): Promise<string> {
          SELECT 'dinding' AS jenis, "fromName" AS nama, "createdAt" AS waktu
            FROM "Confession"
           WHERE "isPublic" = TRUE AND "reportCount" < 3 AND "showMessage" = FALSE
-            AND "fromName" NOT IN ('QA Bot', 'AuditBot', 'Audit', 'TesBot')
+            AND ${BUKAN_UJI}
             AND "createdAt" >= now() - interval '${JENDELA_HARI} days'
          UNION ALL
          SELECT 'papan', CASE WHEN "showAs" = 'nama' THEN "fromName" ELSE '' END, "createdAt"
            FROM "Confession"
           WHERE "isPublic" = TRUE AND "reportCount" < 3 AND "showMessage" = TRUE
-            AND "fromName" NOT IN ('QA Bot', 'AuditBot', 'Audit', 'TesBot')
+            AND ${BUKAN_UJI}
             AND "createdAt" >= now() - interval '${JENDELA_HARI} days'
          UNION ALL
          SELECT 'surat', NULL, "createdAt"
            FROM "Confession"
-          WHERE "fromName" NOT IN ('QA Bot', 'AuditBot', 'Audit', 'TesBot')
+          WHERE ${BUKAN_UJI}
             AND "createdAt" >= now() - interval '${JENDELA_HARI} days'
          UNION ALL
          SELECT 'kado', NULL, "openedAt"
            FROM "Gift"
           WHERE "openedAt" IS NOT NULL
-            AND "fromName" NOT IN ('QA Bot', 'AuditBot', 'Audit')
-            AND "toName" NOT LIKE 'Uji %'
+            AND ${BUKAN_UJI}
             AND "openedAt" >= now() - interval '${JENDELA_KADO_HARI} days'
          UNION ALL
          SELECT 'bikin-kado', NULL, "createdAt"
            FROM "Gift"
-          WHERE "fromName" NOT IN ('QA Bot', 'AuditBot', 'Audit')
-            AND "toName" NOT LIKE 'Uji %'
+          WHERE ${BUKAN_UJI}
             AND "createdAt" >= now() - interval '${JENDELA_HARI} days'
        ) t
        ORDER BY waktu DESC

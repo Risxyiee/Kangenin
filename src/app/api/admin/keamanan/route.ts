@@ -185,10 +185,10 @@ export async function POST(req: NextRequest) {
       // lewat Hyperdrive selalu gagal → 500 "Gagal menjalankan perawatan"
       // di panel. Satu statement per query = pola yang sama dengan semua
       // route lain yang terbukti hidup. Bonus: rowCount per tabel akurat.
-      const penandaUji = "('QA Bot', 'AuditBot', 'Audit', 'TesBot')";
+      const penandaUji = "('QA Bot', 'AuditBot', 'Audit', 'TesBot', 'Tester', 'Tim Kangenin')";
       const hapusConfess = await withDbRetry(() =>
         getPgPool().query(
-          `/* ${nonce} */ delete from "Confession" where "fromName" in ${penandaUji}`
+          `/* ${nonce} */ delete from "Confession" where "fromName" in ${penandaUji} or "toName" like 'Uji %' or "toName" like 'Tujuan %' or "toName" = 'Calon Pengguna'`
         )
       );
       const hapusKado = await withDbRetry(() =>
@@ -198,7 +198,7 @@ export async function POST(req: NextRequest) {
       );
       const hapusGift = await withDbRetry(() =>
         getPgPool().query(
-          `/* ${nonce} */ delete from "Gift" where "fromName" in ('QA Bot', 'AuditBot', 'Audit') or "toName" in ('Tes Alur', 'Uji Buket', 'Uji Foto', 'Uji Kue', 'Uji Kupon')`
+          `/* ${nonce} */ delete from "Gift" where "fromName" in ('QA Bot', 'AuditBot', 'Audit', 'Tester', 'Tim Kangenin') or "toName" in ('Tes Alur', 'Uji Buket', 'Uji Foto', 'Uji Kue', 'Uji Kupon', 'Calon Pengguna')`
         )
       );
       const hapusSuratSet = await withDbRetry(() =>
