@@ -28,11 +28,13 @@ import {
   EyeOff,
   Gift,
   Heart,
+  Instagram,
   Loader2,
   Lock,
   MessageCircle,
   QrCode,
   Trash2,
+  Twitter,
   type LucideIcon,
 } from "lucide-react"
 import { QRCodeSVG } from "qrcode.react"
@@ -698,6 +700,33 @@ function WingmanAlibiCard({
   copyFailed: boolean
   onCopy: (which: "link" | "alibi") => void
 }) {
+  // Status khusus tombol IG (teks alibi tersalin siap-tempel)
+  const [igCopied, setIgCopied] = useState(false)
+  const igResetRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(
+    () => () => {
+      if (igResetRef.current) clearTimeout(igResetRef.current)
+    },
+    []
+  )
+
+  const alibiText = buildAlibiText(kadoUrl)
+
+  /**
+   * IG gak punya share-intent web seperti WA/X — satu-satunya jalan: kop
+   * teks alibi dulu, lalu buka Instagram biar tinggal tempel di DM/story.
+   * Feedback "Tersalin ✓" tetap ditampilkan 4 detik di tombolnya.
+   */
+  async function handleShareIg() {
+    const ok = await copyToClipboard(alibiText)
+    if (!ok) return
+    setIgCopied(true)
+    if (igResetRef.current) clearTimeout(igResetRef.current)
+    igResetRef.current = setTimeout(() => setIgCopied(false), 4000)
+    window.open("https://www.instagram.com/", "_blank", "noopener")
+  }
+
   return (
     <div>
       <CardHeader
@@ -757,6 +786,48 @@ function WingmanAlibiCard({
           Gagal menyalin — salin manual dari kotak link di atas ya.
         </p>
       )}
+
+      {/* Share satu-tap ke medsos — WA & X membuka aplikasi dengan teks alibi
+          udah terisi; IG gak punya intent web, jadi teksnya dikop dulu lalu
+          Instagram dibuka otomatis. */}
+      <div className="mt-4 border-t border-white/5 pt-4">
+        <p className="mb-2 text-[10px] font-semibold tracking-widest text-zinc-500 uppercase">
+          Bagikan langsung
+        </p>
+        <div className="grid grid-cols-3 gap-2">
+          <a
+            href={`https://wa.me/?text=${encodeURIComponent(alibiText)}`}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center justify-center gap-1.5 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 px-2 py-2.5 text-xs font-semibold text-emerald-200 transition-colors hover:bg-emerald-500/20"
+          >
+            <MessageCircle className="h-4 w-4" />
+            WA
+          </a>
+          <a
+            href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(alibiText)}`}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center justify-center gap-1.5 rounded-2xl border border-white/15 bg-white/5 px-2 py-2.5 text-xs font-semibold text-zinc-200 transition-colors hover:bg-white/10"
+          >
+            <Twitter className="h-4 w-4" />
+            X / Twitter
+          </a>
+          <button
+            type="button"
+            onClick={() => void handleShareIg()}
+            className="flex items-center justify-center gap-1.5 rounded-2xl border border-pink-400/30 bg-gradient-to-r from-pink-500/15 to-purple-500/15 px-2 py-2.5 text-xs font-semibold text-pink-200 transition-colors hover:from-pink-500/25 hover:to-purple-500/25"
+          >
+            {igCopied ? <Check className="h-4 w-4" /> : <Instagram className="h-4 w-4" />}
+            {igCopied ? "Tersalin ✓" : "IG"}
+          </button>
+        </div>
+        <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
+          WA &amp; X langsung buka aplikasinya dengan teks udah terisi. Untuk IG:
+          teks alibi otomatis tersalin — tinggal tempel di DM atau story
+          (pakai stiker link biar bisa diklik).
+        </p>
+      </div>
     </div>
   )
 }

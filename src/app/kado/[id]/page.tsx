@@ -22,7 +22,30 @@ import CinematicUnboxing, { type KadoForUnboxing } from "./CinematicUnboxing"
  */
 export const metadata: Metadata = {
   title: "Sebuah kado untukmu 💜 — Kangenin",
+  description:
+    "Seseorang diam-diam menyiapkan kejutan buat kamu di Kangenin. Link ini cuma bisa dibuka sekali — buka sendiri ya.",
   robots: { index: false, follow: false },
+  // Kartu preview WA/X/Telegram: dulu og:title & og:description cuma mewarisi
+  // beranda (judul situs generik) karena metadata halaman nggak punya blok
+  // openGraph sendiri — merge metadata Next itu SHALLOW per segmen. Sekarang
+  // eksplisit: teaser penasaran, tanpa bocor nama pengirim/target.
+  openGraph: {
+    title: "🎁 Ada kado rahasia buat kamu",
+    description:
+      "Seseorang yang diam-diam perhatian menitipkan kejutan buatmu. Buka sekarang — cuma bisa dibuka sekali!",
+    type: "website",
+    siteName: "Kangenin",
+    images: [
+      { url: "/og-generic.png", width: 1200, height: 630, alt: "Kangenin — ada kado rahasia buat kamu" },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "🎁 Ada kado rahasia buat kamu",
+    description:
+      "Seseorang diam-diam menitipkan kejutan buatmu. Buka sekarang — cuma sekali buka!",
+    images: ["/og-generic.png"],
+  },
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
