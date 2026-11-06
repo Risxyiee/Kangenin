@@ -62,13 +62,17 @@ export default function AktivitasTicker() {
   if (items.length === 0) return null;
 
   const item = items[idx % items.length];
-  const subjek = item.jenis === "kado" ? "Seseorang" : item.nama ?? "Seseorang";
+  const subjek = item.jenis === "dinding" || item.jenis === "papan" ? item.nama ?? "Seseorang" : "Seseorang";
   const aksi =
     item.jenis === "kado"
       ? "membuka kado rahasianya"
-      : item.jenis === "papan"
-        ? "membagikan pengakuan di papan"
-        : "menampilkan pesan di dinding";
+      : item.jenis === "bikin-kado"
+        ? "menyiapkan kado kejutan"
+        : item.jenis === "surat"
+          ? "menulis surat rahasia"
+          : item.jenis === "papan"
+            ? "membagikan pengakuan di papan"
+            : "menampilkan pesan di dinding";
   const waktu = waktuLalu(item.waktu);
   const segar = waktu === "baru saja";
 

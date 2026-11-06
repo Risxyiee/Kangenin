@@ -170,29 +170,50 @@ export async function POST(req: NextRequest) {
     const nonce = dbNonce();
     if (parsed.data.action === "sapu-qa") {
       // Sapu data uji otomatis (E2E Playwright & audit manual):
-      // - Confession dari pengirim "QA Bot" (termasuk yang private, karena
-      //   tidak akan muncul di moderasi dinding)
-      // - Kado yang dibuat "QA Bot"/"AuditBot" (penanda uji E2E & audit)
+      // - Confession dari penanda uji: "QA Bot", "AuditBot", "Audit"
+      //   (audit_all_flows.sh), "TesBot" — termasuk yang private, karena
+      //   tidak akan muncul di moderasi dinding
+      // - Kado model baru dari "QA Bot"/"AuditBot" (penanda uji E2E & audit)
+      // - Gift model lama: audit_all_flows.sh (fromName "Audit", toName
+      //   "Tes Alur") & test-gifts-e2e.sh (toName "Uji Buket" dst.) —
+      //   openedAt-nya sempat bocor ke ticker aktivitas landing 2026-11-06
+      // - LetterSet dari penanda uji yang sama
       // Reaksi confess ikut terhapus lewat cascade FK ReactionCount.
       //
-      // DUA statement = DUA query TERPISAH, bukan satu string "a; b".
+      // SETIAP statement = SATU query TERPISAH, bukan satu string "a; b".
       // Bukti produksi 2026-11-04: multi-statement dalam SATU pool.query()
       // lewat Hyperdrive selalu gagal → 500 "Gagal menjalankan perawatan"
       // di panel. Satu statement per query = pola yang sama dengan semua
-      // route lain yang terbukti hidup. Bonus: rowCount per tabel jadi
-      // akurat — versi lama cuma melaporkan hitungan statement TERAKHIR.
+      // route lain yang terbukti hidup. Bonus: rowCount per tabel akurat.
+      const penandaUji = "('QA Bot', 'AuditBot', 'Audit', 'TesBot')";
       const hapusConfess = await withDbRetry(() =>
-        getPgPool().query(`/* ${nonce} */ delete from "Confession" where "fromName" = 'QA Bot'`)
+        getPgPool().query(
+          `/* ${nonce} */ delete from "Confession" where "fromName" in ${penandaUji}`
+        )
       );
       const hapusKado = await withDbRetry(() =>
         getPgPool().query(
           `/* ${nonce} */ delete from "Kado" where "senderName" in ('QA Bot', 'AuditBot')`
         )
       );
+      const hapusGift = await withDbRetry(() =>
+        getPgPool().query(
+          `/* ${nonce} */ delete from "Gift" where "fromName" in ('QA Bot', 'AuditBot', 'Audit') or "toName" in ('Tes Alur', 'Uji Buket', 'Uji Foto', 'Uji Kue', 'Uji Kupon')`
+        )
+      );
+      const hapusSuratSet = await withDbRetry(() =>
+        getPgPool().query(
+          `/* ${nonce} */ delete from "LetterSet" where "fromName" in ${penandaUji}`
+        )
+      );
       return NextResponse.json(
         {
           success: true,
-          deleted: (hapusConfess.rowCount ?? 0) + (hapusKado.rowCount ?? 0),
+          deleted:
+            (hapusConfess.rowCount ?? 0) +
+            (hapusKado.rowCount ?? 0) +
+            (hapusGift.rowCount ?? 0) +
+            (hapusSuratSet.rowCount ?? 0),
         },
         { headers: { "Cache-Control": "no-store, max-age=0" } }
       );

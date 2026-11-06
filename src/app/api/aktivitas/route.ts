@@ -9,19 +9,24 @@ export const runtime = "nodejs";
 // ─────────────────────────────────────────────────────────────────────────────
 // Ticker aktivitas landing page — "R***A baru saja menampilkan pesan di dinding".
 //
-// SUMBER DATA (semua opt-in publik, NAMA SELALU DISAMARKAN di sini di server):
-//   dinding → Confession isPublic=true (pengirim sadar memajang di dinding)
-//   papan   → Confession showMessage=true (membagikan pengakuan; showAs 'nama'
-//             baru memakai nama — kalau 'anonim' → "Seseorang")
-//   kado    → Gift.openedAt (penerima membuka kadonya; TANPA nama siapa pun)
+// JENIS KEJADIAN (semua NYATA dari DB, tidak ada yang direkayasa):
+//   dinding    → Confession isPublic=true, NAMA disamarkan (opt-in pajang)
+//   papan      → Confession showMessage=true, nama cuma kalau showAs 'nama'
+//   kado       → Gift.openedAt (penerima membuka kado; tanpa nama)
+//   surat      → Confession.createdAt APA PUN (privat ikut) — tanpa nama:
+//                "Seseorang menulis surat rahasia". Kejadian paling sering
+//                → inilah yang bikin ticker terasa realtime.
+//   bikin-kado → Gift.createdAt — tanpa nama.
 //
-// ISI SURAT / PESAN TIDAK PERNAH IKUT. Yang lewat kabel cuma: jenis, nama
-// bertopeng (toFomoInitials, mis. "Rifka" → "R***A"), dan waktu. Masking
-// dilakukan DI SERVER — klien tidak pernah menerima nama asli.
+// ANTI-SISA-AUDIT (temuan 2026-11-06): 7 kejadian "kado dibuka" pertama
+// ternyata bekas audit_all_flows.sh / test-gifts-e2e.sh tanggal 1 Nov
+// (fromName "Audit", toName "Uji Buket" dst. — 3 open dalam 34 detik = pola
+// bot). Semua cabang kini mengkecualikan penanda uji, jadi ticker HANYA
+// menampilkan aktivitas manusia sungguhan meski sapu panel belum jalan.
 //
-// Satu statement UNION (aturan Hyperdrive: 1 query per panggilan) + cache
-// isolate 45 dtk + stale-while-error + fallback kosong — filosofi /api/wall:
-// feed sosial TIDAK BOLEH 500, landing page tidak boleh makin berat.
+// ISI SURAT / PESAN TIDAK PERNAH IKUT. Masking dilakukan DI SERVER.
+// Satu statement UNION (aturan Hyperdrive) + cache isolate 45 dtk +
+// stale-while-error + fallback kosong — filosofi /api/wall.
 // ─────────────────────────────────────────────────────────────────────────────
 
 type Row = { jenis: string; nama: string | null; waktu: Date };
@@ -51,17 +56,32 @@ async function muatAktivitas(): Promise<string> {
          SELECT 'dinding' AS jenis, "fromName" AS nama, "createdAt" AS waktu
            FROM "Confession"
           WHERE "isPublic" = TRUE AND "reportCount" < 3 AND "showMessage" = FALSE
+            AND "fromName" NOT IN ('QA Bot', 'AuditBot', 'Audit', 'TesBot')
             AND "createdAt" >= now() - interval '${JENDELA_HARI} days'
          UNION ALL
          SELECT 'papan', CASE WHEN "showAs" = 'nama' THEN "fromName" ELSE '' END, "createdAt"
            FROM "Confession"
           WHERE "isPublic" = TRUE AND "reportCount" < 3 AND "showMessage" = TRUE
+            AND "fromName" NOT IN ('QA Bot', 'AuditBot', 'Audit', 'TesBot')
+            AND "createdAt" >= now() - interval '${JENDELA_HARI} days'
+         UNION ALL
+         SELECT 'surat', NULL, "createdAt"
+           FROM "Confession"
+          WHERE "fromName" NOT IN ('QA Bot', 'AuditBot', 'Audit', 'TesBot')
             AND "createdAt" >= now() - interval '${JENDELA_HARI} days'
          UNION ALL
          SELECT 'kado', NULL, "openedAt"
            FROM "Gift"
           WHERE "openedAt" IS NOT NULL
+            AND "fromName" NOT IN ('QA Bot', 'AuditBot', 'Audit')
+            AND "toName" NOT LIKE 'Uji %'
             AND "openedAt" >= now() - interval '${JENDELA_KADO_HARI} days'
+         UNION ALL
+         SELECT 'bikin-kado', NULL, "createdAt"
+           FROM "Gift"
+          WHERE "fromName" NOT IN ('QA Bot', 'AuditBot', 'Audit')
+            AND "toName" NOT LIKE 'Uji %'
+            AND "createdAt" >= now() - interval '${JENDELA_HARI} days'
        ) t
        ORDER BY waktu DESC
        LIMIT 24`
