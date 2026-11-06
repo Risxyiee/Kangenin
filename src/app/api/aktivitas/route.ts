@@ -50,15 +50,18 @@ function maskNama(raw: string | null): string | null {
 }
 
 // Penanda data uji (skrip audit & E2E pra-launch, temuan 2026-11-06):
-// "QA Bot"/"AuditBot" (Playwright), "Audit"→"Tes Alur" (audit_all_flows.sh),
-// "Tim Kangenin"→"Calon Pengguna" (e2e_live.py), "Tester"/"Rahasia"→"Uji …"
-// (test-confess-reply.sh), "Tes/Tujuan {uniq}" (audit_pralaunch*.py).
+// "QA Bot"/"AuditBot" (Playwright), "Audit"→"Tes Alur/Kualitas" (audit_all_flows
+// & smoke_prod), "Tim Kangenin"→"Calon Pengguna" (e2e_live), "Tester"/"Rahasia"
+// →"Uji …" (test-confess-reply), "Raka"/"Dimas"→"Uji …" (test-gifts-e2e &
+// test_theme_unlock), "Uji Raka"→"Uji Nadia" (test-playlist), "VerifNNNNN"→
+// "Nadia" (verify_papan_prod), "AuditDinding-NNNNN" (verify_prod_wall_toggle).
 // Ticker HANYA menampilkan aktivitas manusia sungguhan — sisa baris uji
 // yang belum kehapus tetap tak akan muncul di sini.
 const BUKAN_UJI =
   `"fromName" NOT IN ('QA Bot', 'AuditBot', 'Audit', 'TesBot', 'Tester', 'Tim Kangenin') ` +
+  `AND "fromName" NOT LIKE 'Verif%' AND "fromName" NOT LIKE 'Uji %' AND "fromName" NOT LIKE 'QA%' ` +
   `AND "toName" NOT LIKE 'Uji %' AND "toName" NOT LIKE 'Tujuan %' AND "toName" NOT LIKE 'Tes %' ` +
-  `AND "toName" <> 'Calon Pengguna'`;
+  `AND "toName" NOT LIKE 'AuditDinding%' AND "toName" <> 'Calon Pengguna'`;
 
 async function muatAktivitas(): Promise<string> {
   const rows = await withDbRetry(() =>

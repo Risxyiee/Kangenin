@@ -188,7 +188,7 @@ export async function POST(req: NextRequest) {
       const penandaUji = "('QA Bot', 'AuditBot', 'Audit', 'TesBot', 'Tester', 'Tim Kangenin')";
       const hapusConfess = await withDbRetry(() =>
         getPgPool().query(
-          `/* ${nonce} */ delete from "Confession" where "fromName" in ${penandaUji} or "toName" like 'Uji %' or "toName" like 'Tujuan %' or "toName" = 'Calon Pengguna'`
+          `/* ${nonce} */ delete from "Confession" where "fromName" in ${penandaUji} or "fromName" like 'Verif%' or "fromName" like 'Uji %' or "toName" like 'Uji %' or "toName" like 'Tujuan %' or "toName" like 'AuditDinding%' or "toName" = 'Calon Pengguna'`
         )
       );
       const hapusKado = await withDbRetry(() =>
@@ -198,12 +198,12 @@ export async function POST(req: NextRequest) {
       );
       const hapusGift = await withDbRetry(() =>
         getPgPool().query(
-          `/* ${nonce} */ delete from "Gift" where "fromName" in ('QA Bot', 'AuditBot', 'Audit', 'Tester', 'Tim Kangenin') or "toName" in ('Tes Alur', 'Uji Buket', 'Uji Foto', 'Uji Kue', 'Uji Kupon', 'Calon Pengguna')`
+          `/* ${nonce} */ delete from "Gift" where "fromName" in ('QA Bot', 'AuditBot', 'Audit', 'Tester', 'Tim Kangenin') or "fromName" like 'Verif%' or "fromName" like 'Uji %' or "toName" like 'Uji %' or "toName" like 'AuditDinding%' or "toName" in ('Tes Alur', 'Uji Buket', 'Uji Foto', 'Uji Kue', 'Uji Kupon', 'Calon Pengguna')`
         )
       );
       const hapusSuratSet = await withDbRetry(() =>
         getPgPool().query(
-          `/* ${nonce} */ delete from "LetterSet" where "fromName" in ${penandaUji}`
+          `/* ${nonce} */ delete from "LetterSet" where "fromName" in ${penandaUji} or "fromName" like 'Verif%' or "fromName" like 'Uji %'`
         )
       );
       return NextResponse.json(
