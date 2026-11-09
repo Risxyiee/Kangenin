@@ -15,7 +15,7 @@ import Link from "next/link";
 // Aksi tulis pakai optimistic update + rollback kalau API gagal (Hyperdrive
 // sesekali 500 sesaat — jangan bikin owner menunggu atau kehilangan state).
 
-type Tab = "ringkasan" | "masukan" | "dinding" | "keamanan" | "kunjungan";
+type Tab = "ringkasan" | "masukan" | "dinding" | "keamanan" | "kunjungan" | "konten";
 
 const STORAGE_KEY = "kangenin-admin-key";
 
@@ -220,6 +220,12 @@ export default function AdminBoard() {
   const [kjLoading, setKjLoading] = useState(false);
   const [kjError, setKjError] = useState("");
 
+  // modul 6 (konten): video promo — di-fetch sebagai blob supaya admin key
+  // tidak pernah muncul di URL/video element.
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [vidLoading, setVidLoading] = useState(false);
+  const [vidError, setVidError] = useState("");
+
   // ── helper fetch dengan header kunci ──
   async function api(path: string, init?: RequestInit): Promise<Record<string, unknown>> {
     const res = await fetch(path, {
@@ -302,12 +308,35 @@ export default function AdminBoard() {
     }
   }
 
+  // ── pemuat modul 6: video promo (blob, sekali per sesi panel) ──
+  async function loadVideo() {
+    setVidLoading(true);
+    setVidError("");
+    try {
+      const res = await fetch("/api/admin/video", {
+        cache: "no-store",
+        headers: { "x-admin-key": key.trim() },
+      });
+      if (!res.ok) {
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(String(json.error ?? `Error ${res.status}`));
+      }
+      const blob = await res.blob();
+      setVideoUrl(URL.createObjectURL(blob));
+    } catch (e) {
+      setVidError(e instanceof Error ? e.message : "Gagal memuat video.");
+    } finally {
+      setVidLoading(false);
+    }
+  }
+
   function loadTab(t: Tab) {
     if (t === "ringkasan" && !overview && !ovLoading) void loadOverview();
     if (t === "masukan" && !masukan && !msLoading) void loadMasukan();
     if (t === "dinding" && !dinding && !ddLoading) void loadDinding();
     if (t === "keamanan" && !keamanan && !kmLoading) void loadKeamanan();
     if (t === "kunjungan" && !kunjungan && !kjLoading) void loadKunjungan();
+    if (t === "konten" && !videoUrl && !vidLoading) void loadVideo();
   }
 
   function switchTab(t: Tab) {
@@ -526,6 +555,7 @@ export default function AdminBoard() {
     { id: "dinding", label: "Dinding" },
     { id: "keamanan", label: "Keamanan" },
     { id: "kunjungan", label: "Kunjungan" },
+    { id: "konten", label: "Konten" },
   ];
 
   return (
@@ -554,7 +584,7 @@ export default function AdminBoard() {
       </p>
 
       {/* Tab bar */}
-      <div className="mt-5 grid grid-cols-5 gap-1 rounded-2xl border border-border bg-card p-1.5">
+      <div className="mt-5 grid grid-cols-3 gap-1 rounded-2xl border border-border bg-card p-1.5 sm:grid-cols-6">
         {tabs.map((t) => (
           <button
             key={t.id}
@@ -1073,6 +1103,68 @@ export default function AdminBoard() {
               )}
             </>
           )}
+        </section>
+      )}
+
+      {/* ═══ MODUL 6: KONTEN ═══ */}
+      {tab === "konten" && (
+        <section className="mt-6">
+          <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+            <h2 className="font-display text-lg font-bold text-foreground">
+              Video TikTok — Kangenin
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Video promo 30 detik (1080×1920, ±4,7 MB) buat TikTok/Reels/Shorts —
+              tour fitur + CTA kangenin.web.id. Pratinjau &amp; unduh di bawah;
+              file tidak dipasang di halaman publik mana pun.
+            </p>
+            {vidLoading && (
+              <p className="mt-4 text-sm text-muted-foreground">Memuat video…</p>
+            )}
+            {vidError && (
+              <div className="mt-4">
+                <p className="text-sm text-destructive">{vidError}</p>
+                <button
+                  type="button"
+                  onClick={() => void loadVideo()}
+                  className="mt-2 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-accent/40"
+                >
+                  ⟳ Coba lagi
+                </button>
+              </div>
+            )}
+            {videoUrl && (
+              <>
+                <video
+                  src={videoUrl}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  className="mx-auto mt-4 block w-full max-w-[300px] rounded-2xl border border-border bg-black"
+                />
+                <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                  <a
+                    href={videoUrl}
+                    download="kangenin-tiktok.mp4"
+                    className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
+                  >
+                    ⬇ Unduh video (.mp4)
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => void loadVideo()}
+                    className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-accent/40"
+                  >
+                    ⟳ Muat ulang
+                  </button>
+                </div>
+                <p className="mt-3 text-center text-xs text-muted-foreground">
+                  Tips upload: setrip sound bawaan di app TikTok, lalu pakai sound
+                  trending biar makin gampang FYP.
+                </p>
+              </>
+            )}
+          </div>
         </section>
       )}
 
