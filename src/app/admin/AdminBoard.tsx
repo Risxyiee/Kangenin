@@ -220,11 +220,14 @@ export default function AdminBoard() {
   const [kjLoading, setKjLoading] = useState(false);
   const [kjError, setKjError] = useState("");
 
-  // modul 6 (konten): video promo — di-fetch sebagai blob supaya admin key
+  // modul 6 (konten): dua video promo — di-fetch sebagai blob supaya admin key
   // tidak pernah muncul di URL/video element.
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [vidLoading, setVidLoading] = useState(false);
   const [vidError, setVidError] = useState("");
+  const [videoUrl2, setVideoUrl2] = useState<string | null>(null);
+  const [vid2Loading, setVid2Loading] = useState(false);
+  const [vid2Error, setVid2Error] = useState("");
 
   // ── helper fetch dengan header kunci ──
   async function api(path: string, init?: RequestInit): Promise<Record<string, unknown>> {
@@ -309,11 +312,15 @@ export default function AdminBoard() {
   }
 
   // ── pemuat modul 6: video promo (blob, sekali per sesi panel) ──
-  async function loadVideo() {
-    setVidLoading(true);
-    setVidError("");
+  async function loadVideo(variant: "tiktok" | "confess" = "tiktok") {
+    const isTiktok = variant === "tiktok";
+    const setLoading = isTiktok ? setVidLoading : setVid2Loading;
+    const setError = isTiktok ? setVidError : setVid2Error;
+    const setUrl = isTiktok ? setVideoUrl : setVideoUrl2;
+    setLoading(true);
+    setError("");
     try {
-      const res = await fetch("/api/admin/video", {
+      const res = await fetch(`/api/admin/video?v=${variant}`, {
         cache: "no-store",
         headers: { "x-admin-key": key.trim() },
       });
@@ -322,11 +329,11 @@ export default function AdminBoard() {
         throw new Error(String(json.error ?? `Error ${res.status}`));
       }
       const blob = await res.blob();
-      setVideoUrl(URL.createObjectURL(blob));
+      setUrl(URL.createObjectURL(blob));
     } catch (e) {
-      setVidError(e instanceof Error ? e.message : "Gagal memuat video.");
+      setError(e instanceof Error ? e.message : "Gagal memuat video.");
     } finally {
-      setVidLoading(false);
+      setLoading(false);
     }
   }
 
@@ -336,7 +343,10 @@ export default function AdminBoard() {
     if (t === "dinding" && !dinding && !ddLoading) void loadDinding();
     if (t === "keamanan" && !keamanan && !kmLoading) void loadKeamanan();
     if (t === "kunjungan" && !kunjungan && !kjLoading) void loadKunjungan();
-    if (t === "konten" && !videoUrl && !vidLoading) void loadVideo();
+    if (t === "konten") {
+      if (!videoUrl && !vidLoading) void loadVideo("tiktok");
+      if (!videoUrl2 && !vid2Loading) void loadVideo("confess");
+    }
   }
 
   function switchTab(t: Tab) {
@@ -1108,15 +1118,14 @@ export default function AdminBoard() {
 
       {/* ═══ MODUL 6: KONTEN ═══ */}
       {tab === "konten" && (
-        <section className="mt-6">
+        <section className="mt-6 space-y-4">
           <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
             <h2 className="font-display text-lg font-bold text-foreground">
-              Video TikTok — Kangenin
+              Video 1 — Tour fitur (TikTok)
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
               Video promo 30 detik (1080×1920, ±4,7 MB) buat TikTok/Reels/Shorts —
-              tour fitur + CTA kangenin.web.id. Pratinjau &amp; unduh di bawah;
-              file tidak dipasang di halaman publik mana pun.
+              tour fitur + CTA kangenin.web.id.
             </p>
             {vidLoading && (
               <p className="mt-4 text-sm text-muted-foreground">Memuat video…</p>
@@ -1126,7 +1135,7 @@ export default function AdminBoard() {
                 <p className="text-sm text-destructive">{vidError}</p>
                 <button
                   type="button"
-                  onClick={() => void loadVideo()}
+                  onClick={() => void loadVideo("tiktok")}
                   className="mt-2 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-accent/40"
                 >
                   ⟳ Coba lagi
@@ -1152,7 +1161,7 @@ export default function AdminBoard() {
                   </a>
                   <button
                     type="button"
-                    onClick={() => void loadVideo()}
+                    onClick={() => void loadVideo("tiktok")}
                     className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-accent/40"
                   >
                     ⟳ Muat ulang
@@ -1161,6 +1170,63 @@ export default function AdminBoard() {
                 <p className="mt-3 text-center text-xs text-muted-foreground">
                   Tips upload: setrip sound bawaan di app TikTok, lalu pakai sound
                   trending biar makin gampang FYP.
+                </p>
+              </>
+            )}
+          </div>
+
+          <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+            <h2 className="font-display text-lg font-bold text-foreground">
+              Video 2 — Confess demo (UI motion)
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Video 28 detik (1080×1920, ±2,3 MB) konsep UI-demo motion design:
+              hook &quot;tulis apa aja, namamu nggak ikut&quot; → 4 langkah → surat
+              tersegel → beat anonim → share link → POV buka surat → tagline.
+            </p>
+            {vid2Loading && (
+              <p className="mt-4 text-sm text-muted-foreground">Memuat video…</p>
+            )}
+            {vid2Error && (
+              <div className="mt-4">
+                <p className="text-sm text-destructive">{vid2Error}</p>
+                <button
+                  type="button"
+                  onClick={() => void loadVideo("confess")}
+                  className="mt-2 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-accent/40"
+                >
+                  ⟳ Coba lagi
+                </button>
+              </div>
+            )}
+            {videoUrl2 && (
+              <>
+                <video
+                  src={videoUrl2}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  className="mx-auto mt-4 block w-full max-w-[300px] rounded-2xl border border-border bg-black"
+                />
+                <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                  <a
+                    href={videoUrl2}
+                    download="kangenin-confess-demo.mp4"
+                    className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
+                  >
+                    ⬇ Unduh video (.mp4)
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => void loadVideo("confess")}
+                    className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-accent/40"
+                  >
+                    ⟳ Muat ulang
+                  </button>
+                </div>
+                <p className="mt-3 text-center text-xs text-muted-foreground">
+                  Tips upload: cocok dipasang bareng caption confess — hook-nya di 3
+                  detik pertama, jangan dipotong.
                 </p>
               </>
             )}

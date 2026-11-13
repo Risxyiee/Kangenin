@@ -15,8 +15,14 @@ export const runtime = "nodejs";
 // Dipanggil sebagai blob dari AdminBoard supaya admin key tidak pernah muncul
 // di URL/video element.
 
-const VIDEO_URL =
-  "https://raw.githubusercontent.com/Risxyiee/Kangenin/main/kangenin-video/out/kangenin-tiktok.mp4";
+// Katalog video konten (sumber: repo GitHub, kangenin-video/out/).
+// ?v= memilih video; default tetap video pertama supaya pemakaian lama aman.
+const VIDEOS: Record<string, string> = {
+  tiktok:
+    "https://raw.githubusercontent.com/Risxyiee/Kangenin/main/kangenin-video/out/kangenin-tiktok.mp4",
+  confess:
+    "https://raw.githubusercontent.com/Risxyiee/Kangenin/main/kangenin-video/out/kangenin-confess-demo.mp4",
+};
 
 export async function GET(req: NextRequest) {
   try {
@@ -32,7 +38,8 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const up = await fetch(VIDEO_URL, { cache: "no-store" });
+    const videoUrl = VIDEOS[req.nextUrl.searchParams.get("v") ?? "tiktok"] ?? VIDEOS.tiktok;
+    const up = await fetch(videoUrl, { cache: "no-store" });
     if (!up.ok || !up.body) {
       return NextResponse.json(
         { error: "Video sedang tidak tersedia. Coba lagi sebentar lagi ya." },
