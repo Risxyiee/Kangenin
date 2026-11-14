@@ -15,7 +15,7 @@ import Link from "next/link";
 // Aksi tulis pakai optimistic update + rollback kalau API gagal (Hyperdrive
 // sesekali 500 sesaat — jangan bikin owner menunggu atau kehilangan state).
 
-type Tab = "ringkasan" | "masukan" | "dinding" | "keamanan" | "kunjungan" | "konten";
+type Tab = "ringkasan" | "masukan" | "dinding" | "keamanan" | "kunjungan" | "konten" | "bot";
 
 const STORAGE_KEY = "kangenin-admin-key";
 
@@ -85,6 +85,27 @@ type KunjunganData = {
   mingguIni: number;
   total: number;
   top: { path: string; hariIni: number; mingguIni: number; total: number }[];
+};
+
+// Denyut realtime (modul kunjungan): sesi beacon /api/track/visit
+type LiveData = {
+  tersedia: boolean;
+  online1m: number;
+  online5m: number;
+  unikHariIni: number;
+  viewsHariIni: number;
+  baru1jam: number;
+  sedangMembuka: { path: string; orang: number }[];
+};
+
+// Status WA bot (modul bot): env terpasang atau belum — tanpa bocor isinya
+type BotStatus = {
+  tokenTerpasang: boolean;
+  ownerTerpasang: boolean;
+  ownerMasked: string[];
+  secretTerpasang: boolean;
+  webhookUrl: string;
+  perintah: string[];
 };
 
 // Label ramah untuk path yang dikenal; sisanya tampil apa adanya.
@@ -229,6 +250,16 @@ export default function AdminBoard() {
   const [vid2Loading, setVid2Loading] = useState(false);
   const [vid2Error, setVid2Error] = useState("");
 
+  // denyut realtime (modul kunjungan) + WA bot (modul bot)
+  const [live, setLive] = useState<LiveData | null>(null);
+  const [liveLoading, setLiveLoading] = useState(false);
+  const [liveAuto, setLiveAuto] = useState(true);
+  const [botStatus, setBotStatus] = useState<BotStatus | null>(null);
+  const [botLoading, setBotLoading] = useState(false);
+  const [botError, setBotError] = useState("");
+  const [botTestMsg, setBotTestMsg] = useState("");
+  const [botTesting, setBotTesting] = useState(false);
+
   // ── helper fetch dengan header kunci ──
   async function api(path: string, init?: RequestInit): Promise<Record<string, unknown>> {
     const res = await fetch(path, {
@@ -337,12 +368,66 @@ export default function AdminBoard() {
     }
   }
 
+  // ── pemuat denyut realtime (polling 5 dtk saat tab kunjungan terbuka) ──
+  async function loadLive() {
+    setLiveLoading(true);
+    try {
+      const json = await api("/api/admin/visits/live");
+      setLive(json as unknown as LiveData);
+    } catch (e) {
+      // polling — error ringan tidak perlu memotong siklus
+      console.warn("loadLive gagal:", e instanceof Error ? e.message : e);
+    } finally {
+      setLiveLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (tab !== "kunjungan" || !liveAuto) return;
+    const id = setInterval(() => {
+      if (typeof document === "undefined" || document.visibilityState === "visible") {
+        void loadLive();
+      }
+    }, 5000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, liveAuto, key]);
+
+  // ── pemuat modul bot: status env (tanpa bocor isinya) ──
+  async function loadBot() {
+    setBotLoading(true);
+    setBotError("");
+    try {
+      const json = await api("/api/admin/bot");
+      setBotStatus(json as unknown as BotStatus);
+    } catch (e) {
+      setBotError(e instanceof Error ? e.message : "Gagal memuat status bot.");
+    } finally {
+      setBotLoading(false);
+    }
+  }
+
+  async function tesBot() {
+    setBotTesting(true);
+    setBotTestMsg("");
+    try {
+      await api("/api/admin/bot", { method: "POST" });
+      setBotTestMsg("✅ Perintah tes terkirim — cek WhatsApp kamu.");
+    } catch (e) {
+      setBotTestMsg(`❌ ${e instanceof Error ? e.message : "Gagal kirim pesan tes."}`);
+    } finally {
+      setBotTesting(false);
+    }
+  }
+
   function loadTab(t: Tab) {
     if (t === "ringkasan" && !overview && !ovLoading) void loadOverview();
     if (t === "masukan" && !masukan && !msLoading) void loadMasukan();
     if (t === "dinding" && !dinding && !ddLoading) void loadDinding();
     if (t === "keamanan" && !keamanan && !kmLoading) void loadKeamanan();
     if (t === "kunjungan" && !kunjungan && !kjLoading) void loadKunjungan();
+    if (t === "kunjungan" && !live && !liveLoading) void loadLive();
+    if (t === "bot" && !botStatus && !botLoading) void loadBot();
     if (t === "konten") {
       if (!videoUrl && !vidLoading) void loadVideo("tiktok");
       if (!videoUrl2 && !vid2Loading) void loadVideo("confess");
@@ -566,6 +651,7 @@ export default function AdminBoard() {
     { id: "keamanan", label: "Keamanan" },
     { id: "kunjungan", label: "Kunjungan" },
     { id: "konten", label: "Konten" },
+    { id: "bot", label: "Bot" },
   ];
 
   return (
@@ -582,6 +668,8 @@ export default function AdminBoard() {
             setDinding(null);
             setKeamanan(null);
             setKunjungan(null);
+            setLive(null);
+            setBotStatus(null);
             loadTab(tab);
           }}
           className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-accent/40"
@@ -594,7 +682,7 @@ export default function AdminBoard() {
       </p>
 
       {/* Tab bar */}
-      <div className="mt-5 grid grid-cols-3 gap-1 rounded-2xl border border-border bg-card p-1.5 sm:grid-cols-6">
+      <div className="mt-5 grid grid-cols-4 gap-1 rounded-2xl border border-border bg-card p-1.5 sm:grid-cols-7">
         {tabs.map((t) => (
           <button
             key={t.id}
@@ -1063,6 +1151,71 @@ export default function AdminBoard() {
       {/* ═══ MODUL 5: KUNJUNGAN ═══ */}
       {tab === "kunjungan" && (
         <section className="mt-6">
+          {/* ── denyut realtime ── */}
+          <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="flex items-center gap-2 font-display text-lg font-bold text-foreground">
+                <span className="relative flex h-2.5 w-2.5">
+                  {live && live.online1m > 0 && (
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                  )}
+                  <span
+                    className={`relative inline-flex h-2.5 w-2.5 rounded-full ${
+                      live && live.online1m > 0 ? "bg-red-500" : "bg-muted-foreground/40"
+                    }`}
+                  />
+                </span>
+                Pengunjung realtime
+              </h2>
+              <button
+                type="button"
+                onClick={() => setLiveAuto((v) => !v)}
+                className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                  liveAuto
+                    ? "border-green-600/40 bg-green-500/10 text-green-700 dark:text-green-400"
+                    : "border-border bg-card text-muted-foreground"
+                }`}
+              >
+                {liveAuto ? "● LIVE 5 dtk" : "○ jeda"}
+              </button>
+            </div>
+            {live?.tersedia === false && (
+              <p className="mt-3 text-sm text-muted-foreground">
+                Tabel "VisitLive" belum dibuat di database — jalankan
+                scripts/sql_visit_live.sql di Supabase dulu.
+              </p>
+            )}
+            {live && live.tersedia && (
+              <>
+                <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <StatCard value={nf(live.online1m)} label="online sekarang" />
+                  <StatCard value={nf(live.online5m)} label="aktif 5 menit" />
+                  <StatCard value={nf(live.unikHariIni)} label="pengunjung hari ini" />
+                  <StatCard value={nf(live.viewsHariIni)} label="pageviews hari ini" />
+                </div>
+                <p className="mt-2 text-[11px] text-muted-foreground">
+                  kunjungan baru 1 jam terakhir: {nf(live.baru1jam)}
+                  {liveLoading && <span className="ml-2">⟳ memuat…</span>}
+                </p>
+                {live.sedangMembuka.length > 0 && (
+                  <div className="mt-3 rounded-xl border border-border bg-muted/30 p-3">
+                    <p className="text-xs font-semibold text-muted-foreground">Sedang membuka:</p>
+                    <ul className="mt-1.5 space-y-1">
+                      {live.sedangMembuka.map((p) => (
+                        <li key={p.path} className="flex items-center justify-between text-xs">
+                          <span className="truncate font-mono text-foreground/80">{p.path}</span>
+                          <span className="ml-2 shrink-0 font-semibold text-foreground">
+                            {p.orang} orang
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
           {kjLoading && <p className="text-sm text-muted-foreground">Memuat kunjungan…</p>}
           {kjError && <p className="text-sm text-destructive">{kjError}</p>}
           {kunjungan && !kunjungan.tersedia && (
@@ -1227,6 +1380,90 @@ export default function AdminBoard() {
                 <p className="mt-3 text-center text-xs text-muted-foreground">
                   Tips upload: cocok dipasang bareng caption confess — hook-nya di 3
                   detik pertama, jangan dipotong.
+                </p>
+              </>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* ═══ MODUL 7: BOT ═══ */}
+      {tab === "bot" && (
+        <section className="mt-6">
+          <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+            <h2 className="font-display text-lg font-bold text-foreground">
+              WhatsApp Bot — Kangenin
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Bot WA via Fonnte: kirim link siap-share, cek pengunjung realtime,
+              dan kirim link langsung ke nomor siapa pun — semua dari chat WhatsApp.
+            </p>
+            {botLoading && <p className="mt-4 text-sm text-muted-foreground">Memuat status…</p>}
+            {botError && <p className="mt-4 text-sm text-destructive">{botError}</p>}
+            {botStatus && (
+              <>
+                <div className="mt-4 space-y-2 text-sm">
+                  <div className="flex items-center justify-between rounded-xl border border-border bg-muted/30 px-3 py-2">
+                    <span className="text-foreground">FONNTE_TOKEN</span>
+                    <span className={botStatus.tokenTerpasang ? "font-semibold text-green-600" : "font-semibold text-destructive"}>
+                      {botStatus.tokenTerpasang ? "✓ terpasang" : "✗ belum"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-xl border border-border bg-muted/30 px-3 py-2">
+                    <span className="text-foreground">
+                      WA_OWNER_NUMBER {botStatus.ownerMasked.length > 0 && `(${botStatus.ownerMasked.join(", ")})`}
+                    </span>
+                    <span className={botStatus.ownerTerpasang ? "font-semibold text-green-600" : "font-semibold text-destructive"}>
+                      {botStatus.ownerTerpasang ? "✓ terpasang" : "✗ belum"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-xl border border-border bg-muted/30 px-3 py-2">
+                    <span className="text-foreground">WA_WEBHOOK_SECRET</span>
+                    <span className={botStatus.secretTerpasang ? "font-semibold text-green-600" : "font-semibold text-amber-600"}>
+                      {botStatus.secretTerpasang ? "✓ terpasang" : "⚠ disarankan"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-xl border border-border bg-muted/30 p-3">
+                  <p className="text-xs font-semibold text-muted-foreground">
+                    Webhook URL — pasang ini di dashboard Fonnte (Device → Webhook):
+                  </p>
+                  <code className="mt-2 block break-all rounded-lg bg-background px-3 py-2 font-mono text-xs text-foreground">
+                    {botStatus.webhookUrl}
+                  </code>
+                </div>
+
+                <div className="mt-4 rounded-xl border border-border bg-muted/30 p-3">
+                  <p className="text-xs font-semibold text-muted-foreground">Perintah bot:</p>
+                  <ul className="mt-1.5 space-y-1 text-xs text-foreground/80">
+                    {botStatus.perintah.map((c) => (
+                      <li key={c} className="font-mono">• {c}</li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void tesBot()}
+                    disabled={botTesting || !botStatus.tokenTerpasang || !botStatus.ownerTerpasang}
+                    className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-90 disabled:opacity-40"
+                  >
+                    {botTesting ? "Mengirim…" : "📨 Kirim pesan tes"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void loadBot()}
+                    className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-accent/40"
+                  >
+                    ⟳ Muat ulang
+                  </button>
+                </div>
+                {botTestMsg && <p className="mt-2 text-sm text-muted-foreground">{botTestMsg}</p>}
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Belum punya token? Daftar di fonnte.com (gratis), hubungkan nomor WA,
+                  copy token → pasang sebagai secret FONNTE_TOKEN di Cloudflare.
                 </p>
               </>
             )}

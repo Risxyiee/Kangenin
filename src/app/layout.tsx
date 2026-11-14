@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
+import { VisitBeacon } from "@/components/tracker/VisitBeacon";
 
 // Font di-host sendiri (src/fonts) — build & dev nggak perlu fetch ke
 // fonts.googleapis.com lagi: lebih cepat, hermetik, dan aman buat
@@ -74,6 +75,7 @@ export default function RootLayout({
         className={`${jakarta.variable} ${caveat.variable} font-sans antialiased bg-background text-foreground`}
       >
         {children}
+        <VisitBeacon />
         <Toaster />
       </body>
     </html>
