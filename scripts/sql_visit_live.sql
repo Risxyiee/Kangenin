@@ -12,3 +12,6 @@ create table if not exists "VisitLive" (
   "firstSeen" timestamptz not null default now(),
   "lastSeen"  timestamptz not null default now()
 );
+
+create index if not exists "VisitLive_lastSeen_idx" on "VisitLive" ("lastSeen");
+create index if not exists "VisitLive_firstSeen_idx" on "VisitLive" ("firstSeen");
